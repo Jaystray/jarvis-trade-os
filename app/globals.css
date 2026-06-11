@@ -388,10 +388,10 @@ body {
 
 .floating-tv-feed {
   position: fixed;
-  left: 320px;
-  top: 218px;
+  left: 520px;
+  top: 24px;
   z-index: 6;
-  max-width: 300px;
+  max-width: 340px;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
   line-height: 1.8;

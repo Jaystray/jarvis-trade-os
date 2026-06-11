@@ -677,6 +677,7 @@ function FloatingLauncherStatus(props: { launch: LocalLaunchResult | null }) {
 
 function FloatingTradingViewFeed(props: { alerts: TradingViewAlert[] }) {
   const latest = props.alerts[0];
+  const latestSummary = latest ? formatTradingViewAlert(latest) : "";
   const latestDollars = latest
     ? readAlertNumber(latest, ["pnl", "profit", "profitUsd", "totalPnl", "dollars"]) ??
       parseDollarValue(latest.message)
@@ -701,7 +702,7 @@ function FloatingTradingViewFeed(props: { alerts: TradingViewAlert[] }) {
               {latestPoints !== undefined ? `${formatPoints(latestPoints)} pts` : ""}
             </p>
           )}
-          <p>{latest.message.slice(0, 80)}</p>
+          <p>{latestSummary}</p>
         </>
       ) : (
         <p>Connect alerts to /api/webhooks/tradingview</p>
@@ -1101,6 +1102,34 @@ function parseDollarValue(text: string) {
 function parsePointValue(text: string) {
   const match = text.match(/(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)\s*(?:points|pts)\b/i);
   return match?.[1] ? parseNumberValue(match[1]) : undefined;
+}
+
+function formatTradingViewAlert(alert: TradingViewAlert) {
+  const payload = alert.rawPayload;
+  const parts = [
+    readPayloadString(payload, ["event", "grade"]) || alert.action,
+    readPayloadString(payload, ["setup"]),
+    readPayloadString(payload, ["level"]),
+    formatRibbon(payload),
+    readPayloadString(payload, ["score"]) ? `score ${readPayloadString(payload, ["score"])}` : "",
+    readPayloadString(payload, ["smt_read"])
+  ].filter((part) => part && part !== "-" && part !== "NONE");
+
+  return parts.join(" | ").slice(0, 96);
+}
+
+function formatRibbon(payload: Record<string, unknown>) {
+  const ribbon = readPayloadString(payload, ["ribbon"]);
+  const strength = readPayloadString(payload, ["ribbon_strength", "strength"]);
+  return ribbon ? `${ribbon}${strength ? ` ${strength}` : ""}` : "";
+}
+
+function readPayloadString(payload: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
 }
 
 function formatPoints(points: number) {

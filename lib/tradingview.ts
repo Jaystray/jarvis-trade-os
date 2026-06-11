@@ -37,7 +37,7 @@ function readPayloadValue(payload: Record<string, unknown>, keys: string[]) {
 export function normalizeTradingViewPayload(payload: Record<string, unknown>) {
   const message =
     readPayloadValue(payload, ["message", "alert_message", "text", "comment"]) ||
-    JSON.stringify(payload);
+    buildPayloadSummary(payload);
 
   return {
     action: readPayloadValue(payload, ["action", "side", "direction", "signal"]) || "alert",
@@ -47,6 +47,31 @@ export function normalizeTradingViewPayload(payload: Record<string, unknown>) {
     symbol: readPayloadValue(payload, ["symbol", "ticker", "market"]) || "unknown",
     timeframe: readPayloadValue(payload, ["timeframe", "interval", "tf"]) || "unknown"
   };
+}
+
+function buildPayloadSummary(payload: Record<string, unknown>) {
+  const event = readPayloadValue(payload, ["event", "grade"]);
+  const setup = readPayloadValue(payload, ["setup"]);
+  const direction = readPayloadValue(payload, ["direction", "action", "side", "signal"]);
+  const level = readPayloadValue(payload, ["level"]);
+  const ribbon = readPayloadValue(payload, ["ribbon"]);
+  const strength = readPayloadValue(payload, ["ribbon_strength", "strength"]);
+  const score = readPayloadValue(payload, ["score"]);
+  const ttm = readPayloadValue(payload, ["ttm"]);
+  const smt = readPayloadValue(payload, ["smt_read"]);
+
+  return [
+    event || "TradingView alert",
+    direction,
+    setup,
+    level,
+    ribbon ? `${ribbon}${strength ? ` ${strength}` : ""}` : "",
+    score ? `score ${score}` : "",
+    ttm && ttm !== "NONE" ? `TTM ${ttm}` : "",
+    smt && smt !== "-" ? smt : ""
+  ]
+    .filter(Boolean)
+    .join(" | ");
 }
 
 export function validateTradingViewSecret(request: Request, payload?: Record<string, unknown>) {
