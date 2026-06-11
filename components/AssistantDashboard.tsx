@@ -69,6 +69,18 @@ type AlertPnlValues = {
   dollars?: number;
   points?: number;
 };
+type TradingViewPnlValues = {
+  dayDollars?: number;
+  dayPoints?: number;
+  source?: string;
+  weekDollars?: number;
+  weekPoints?: number;
+};
+type TradingViewPnlCache = TradingViewPnlValues & {
+  dateKey: string;
+};
+
+const tradingViewPnlCacheKey = "jarvis-tradingview-pnl";
 
 declare global {
   interface Window {
@@ -145,6 +157,7 @@ export function AssistantDashboard() {
   const [economicCalendarError, setEconomicCalendarError] = useState("");
   const [pineRebuilds, setPineRebuilds] = useState<PineRebuild[]>([]);
   const [tradingViewPnlState, setTradingViewPnlState] = useState<TradingViewPnlState | null>(null);
+  const [tradingViewPnlCache, setTradingViewPnlCache] = useState<TradingViewPnlCache | null>(null);
   const [input, setInput] = useState("");
   const [memoryInput, setMemoryInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -167,6 +180,15 @@ export function AssistantDashboard() {
   useEffect(() => {
     voiceModeRef.current = voiceMode;
   }, [voiceMode]);
+
+  useEffect(() => {
+    try {
+      const cached = window.localStorage.getItem(tradingViewPnlCacheKey);
+      if (cached) setTradingViewPnlCache(JSON.parse(cached) as TradingViewPnlCache);
+    } catch {
+      setTradingViewPnlCache(null);
+    }
+  }, []);
 
   useEffect(() => {
     isSendingRef.current = isSending;
@@ -352,6 +374,22 @@ export function AssistantDashboard() {
   }, []);
 
   useEffect(() => {
+    const livePnl = getSavedTradingViewPnl(tradingViewPnlState) ?? getTradingViewPnl(tradingViewAlerts);
+    if (!hasTradingViewPnlValue(livePnl)) return;
+
+    setTradingViewPnlCache((current) => {
+      const nextCache = buildTradingViewPnlCache(livePnl, current);
+      if (isSameTradingViewPnlCache(current, nextCache)) return current;
+      try {
+        window.localStorage.setItem(tradingViewPnlCacheKey, JSON.stringify(nextCache));
+      } catch {
+        // Browser storage is optional; live database state remains the source of truth.
+      }
+      return nextCache;
+    });
+  }, [tradingViewAlerts, tradingViewPnlState]);
+
+  useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
@@ -482,11 +520,12 @@ export function AssistantDashboard() {
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
   const savedTradingViewPnl = getSavedTradingViewPnl(tradingViewPnlState);
-  const tradingViewPnl = savedTradingViewPnl ?? getTradingViewPnl(tradingViewAlerts);
+  const liveTradingViewPnl = savedTradingViewPnl ?? getTradingViewPnl(tradingViewAlerts);
+  const tradingViewPnl = mergeTradingViewPnl(liveTradingViewPnl, tradingViewPnlCache);
   const journalDayPnl = getTodayPnl(entries);
   const journalWeekPnl = getWeekPnl(entries);
   const pnl = tradingViewPnl.dayDollars ?? journalDayPnl;
-  const weekPnl = tradingViewPnl.weekDollars ?? tradingViewPnl.dayDollars ?? journalWeekPnl;
+  const weekPnl = tradingViewPnl.weekDollars ?? journalWeekPnl;
   const latestDirection = entries[0]?.direction;
   const bias =
     latestDirection === "Long" ? "long" : latestDirection === "Short" ? "short" : "neutral";
@@ -516,7 +555,7 @@ export function AssistantDashboard() {
         targetMax={400}
         targetMin={250}
         weekPnl={weekPnl}
-        weekPoints={tradingViewPnl.weekPoints ?? tradingViewPnl.dayPoints}
+        weekPoints={tradingViewPnl.weekPoints}
       />
       <FloatingOnlineIntel intel={latestIntel} />
       <FloatingLauncherStatus launch={latestLaunch} />
@@ -1079,6 +1118,72 @@ function getWeekPnl(entries: TradeJournalEntry[]) {
       return entryDate >= start && entryDate <= today;
     })
     .reduce((total, entry) => total + (Number.parseFloat(entry.points) || 0), 0);
+}
+
+function mergeTradingViewPnl(
+  livePnl: TradingViewPnlValues,
+  cache: TradingViewPnlCache | null
+): TradingViewPnlValues {
+  const todayKey = getEasternDateKey(new Date());
+  const useCachedDay = cache?.dateKey === todayKey;
+
+  return {
+    dayDollars: livePnl.dayDollars ?? (useCachedDay ? cache?.dayDollars : undefined),
+    dayPoints: livePnl.dayPoints ?? (useCachedDay ? cache?.dayPoints : undefined),
+    source: livePnl.source ?? cache?.source,
+    weekDollars: livePnl.weekDollars ?? cache?.weekDollars,
+    weekPoints: livePnl.weekPoints ?? cache?.weekPoints
+  };
+}
+
+function buildTradingViewPnlCache(
+  livePnl: TradingViewPnlValues,
+  cache: TradingViewPnlCache | null
+): TradingViewPnlCache {
+  const dateKey = getEasternDateKey(new Date());
+  const useCachedDay = cache?.dateKey === dateKey;
+
+  return {
+    dateKey,
+    dayDollars: livePnl.dayDollars ?? (useCachedDay ? cache?.dayDollars : undefined),
+    dayPoints: livePnl.dayPoints ?? (useCachedDay ? cache?.dayPoints : undefined),
+    source: livePnl.source ?? cache?.source ?? "TradingView",
+    weekDollars: livePnl.weekDollars ?? cache?.weekDollars,
+    weekPoints: livePnl.weekPoints ?? cache?.weekPoints
+  };
+}
+
+function hasTradingViewPnlValue(values: TradingViewPnlValues) {
+  return (
+    values.dayDollars !== undefined ||
+    values.dayPoints !== undefined ||
+    values.weekDollars !== undefined ||
+    values.weekPoints !== undefined
+  );
+}
+
+function isSameTradingViewPnlCache(left: TradingViewPnlCache | null, right: TradingViewPnlCache) {
+  return (
+    left?.dateKey === right.dateKey &&
+    left.dayDollars === right.dayDollars &&
+    left.dayPoints === right.dayPoints &&
+    left.source === right.source &&
+    left.weekDollars === right.weekDollars &&
+    left.weekPoints === right.weekPoints
+  );
+}
+
+function getEasternDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/New_York",
+    year: "numeric"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return `${year}-${month}-${day}`;
 }
 
 function getSavedTradingViewPnl(state: TradingViewPnlState | null) {
