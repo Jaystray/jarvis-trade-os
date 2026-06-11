@@ -103,3 +103,13 @@ export type TradingViewPnlState = {
   sourceAlertId?: string;
   updatedAt: string;
 };
+
+export type EconomicCalendarEvent = {
+  date: string;
+  time: string;
+  eventName: string;
+  impactLevel: "high";
+  actual: string;
+  forecast: string;
+  previous: string;
+};

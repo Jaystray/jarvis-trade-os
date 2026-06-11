@@ -29,6 +29,7 @@ import type {
   AgentRun,
   ChartWatchLog,
   ChatMessage,
+  EconomicCalendarEvent,
   LocalLaunchResult,
   Memory,
   PineRebuild,
@@ -140,6 +141,8 @@ export function AssistantDashboard() {
   const [tradingViewAlerts, setTradingViewAlerts] = useState<TradingViewAlert[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [chartLogs, setChartLogs] = useState<ChartWatchLog[]>([]);
+  const [economicEvents, setEconomicEvents] = useState<EconomicCalendarEvent[]>([]);
+  const [economicCalendarError, setEconomicCalendarError] = useState("");
   const [pineRebuilds, setPineRebuilds] = useState<PineRebuild[]>([]);
   const [tradingViewPnlState, setTradingViewPnlState] = useState<TradingViewPnlState | null>(null);
   const [input, setInput] = useState("");
@@ -292,7 +295,8 @@ export function AssistantDashboard() {
         chartRes,
         pineRes,
         tvRes,
-        tvPnlRes
+        tvPnlRes,
+        economicCalendarRes
       ] = await Promise.all([
         fetch("/api/chat?sessionId=primary"),
         fetch("/api/memories"),
@@ -302,7 +306,8 @@ export function AssistantDashboard() {
         fetch("/api/chart-watch"),
         fetch("/api/pine-rebuild"),
         fetch("/api/tradingview-alerts"),
-        fetch("/api/tradingview-pnl")
+        fetch("/api/tradingview-pnl"),
+        fetch("/api/economic-calendar")
       ]);
       setMessages((await chatRes.json()).messages);
       setMemories((await memoryRes.json()).memories);
@@ -313,8 +318,23 @@ export function AssistantDashboard() {
       setPineRebuilds((await pineRes.json()).rebuilds);
       setTradingViewAlerts((await tvRes.json()).alerts);
       setTradingViewPnlState((await tvPnlRes.json()).pnl);
+      const economicCalendar = await economicCalendarRes.json();
+      setEconomicEvents(economicCalendar.events || []);
+      setEconomicCalendarError(economicCalendarRes.ok ? "" : economicCalendar.error || "Calendar unavailable.");
     }
     refresh();
+  }, []);
+
+  useEffect(() => {
+    async function refreshEconomicCalendar() {
+      const res = await fetch("/api/economic-calendar");
+      const data = await res.json();
+      setEconomicEvents(data.events || []);
+      setEconomicCalendarError(res.ok ? "" : data.error || "Calendar unavailable.");
+    }
+
+    const interval = window.setInterval(refreshEconomicCalendar, 60 * 60 * 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -501,6 +521,7 @@ export function AssistantDashboard() {
       <FloatingOnlineIntel intel={latestIntel} />
       <FloatingLauncherStatus launch={latestLaunch} />
       <FloatingTradingViewFeed alerts={tradingViewAlerts} />
+      <FloatingEconomicCalendar error={economicCalendarError} events={economicEvents} />
       <ChartIntake
         status={chartIntakeStatus}
         onChartFile={analyzeChartFile}
@@ -643,7 +664,7 @@ function FloatingPnl(props: {
       </p>
       {typeof props.dayPoints === "number" && (
         <p>
-          Points <span className={dayClass}>{formatPoints(props.dayPoints)}</span>
+          Today&apos;s Points: <span className={dayClass}>{formatPoints(props.dayPoints)}</span>
         </p>
       )}
       <p>
@@ -651,7 +672,7 @@ function FloatingPnl(props: {
       </p>
       {typeof props.weekPoints === "number" && (
         <p>
-          Wk pts <span className={weekClass}>{formatPoints(props.weekPoints)}</span>
+          Week&apos;s Points: <span className={weekClass}>{formatPoints(props.weekPoints)}</span>
         </p>
       )}
       <p>
@@ -718,6 +739,49 @@ function FloatingTradingViewFeed(props: { alerts: TradingViewAlert[] }) {
         <p>Connect alerts to /api/webhooks/tradingview</p>
       )}
     </div>
+  );
+}
+
+function FloatingEconomicCalendar(props: { error: string; events: EconomicCalendarEvent[] }) {
+  return (
+    <section className="floating-economic-calendar" aria-label="Economic Calendar">
+      <div className="economic-calendar-header">
+        <p className="corner-label">Economic Calendar</p>
+        <span>High Impact</span>
+      </div>
+      {props.error ? (
+        <p className="economic-calendar-error">{props.error}</p>
+      ) : props.events.length ? (
+        <div className="economic-calendar-list">
+          {props.events.slice(0, 8).map((event) => (
+            <article className="economic-calendar-event" key={`${event.date}-${event.time}-${event.eventName}`}>
+              <div>
+                <p className="economic-calendar-time">
+                  {event.date} · {event.time} ET
+                </p>
+                <h3>{event.eventName}</h3>
+              </div>
+              <dl>
+                <div>
+                  <dt>Forecast</dt>
+                  <dd>{event.forecast || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Previous</dt>
+                  <dd>{event.previous || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Actual</dt>
+                  <dd>{event.actual || "Pending"}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="economic-calendar-empty">No high-impact events this week.</p>
+      )}
+    </section>
   );
 }
 

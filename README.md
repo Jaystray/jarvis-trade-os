@@ -95,11 +95,13 @@ Suggested TradingView alert message:
   "timeframe": "{{interval}}",
   "action": "entry",
   "price": "{{close}}",
-  "message": "{{strategy.order.alert_message}}"
+  "message": "{{strategy.order.alert_message}}",
+  "todayPoints": "{{plot(\"Today Points\")}}",
+  "weekPoints": "{{plot(\"Week Points\")}}"
 }
 ```
 
-Jarvis stores each alert in `tradingview_alerts` and shows the latest alert in the cockpit. If you can send a hosted chart image URL, include:
+Jarvis stores each alert in `tradingview_alerts`, stores the latest `todayPoints` and `weekPoints` values in `tradingview_pnl_state`, and shows them in the cockpit. If you can send a hosted chart image URL, include:
 
 ```json
 {
