@@ -85,6 +85,21 @@ CREATE TABLE IF NOT EXISTS tradingview_alerts (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS tradingview_pnl_state (
+  id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  today_points TEXT NOT NULL DEFAULT '',
+  today_pnl TEXT NOT NULL DEFAULT '',
+  week_points TEXT NOT NULL DEFAULT '',
+  week_pnl TEXT NOT NULL DEFAULT '',
+  trades TEXT NOT NULL DEFAULT '',
+  win_rate TEXT NOT NULL DEFAULT '',
+  mfe TEXT NOT NULL DEFAULT '',
+  mae TEXT NOT NULL DEFAULT '',
+  source_alert_id TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memories_content ON memories(content);
 CREATE INDEX IF NOT EXISTS idx_trade_journal_date ON trade_journal(date DESC);
@@ -94,3 +109,4 @@ CREATE INDEX IF NOT EXISTS idx_chart_watch_logs_created ON chart_watch_logs(crea
 CREATE INDEX IF NOT EXISTS idx_pine_rebuilds_created ON pine_rebuilds(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tradingview_alerts_created ON tradingview_alerts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tradingview_alerts_symbol ON tradingview_alerts(symbol, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tradingview_pnl_state_updated ON tradingview_pnl_state(updated_at DESC);

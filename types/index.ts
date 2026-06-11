@@ -88,3 +88,18 @@ export type TradingViewAlert = {
   screenshotUrl?: string;
   createdAt: string;
 };
+
+export type TradingViewPnlState = {
+  id: string;
+  symbol: string;
+  todayPoints: string;
+  todayPnl: string;
+  weekPoints: string;
+  weekPnl: string;
+  trades: string;
+  winRate: string;
+  mfe: string;
+  mae: string;
+  sourceAlertId?: string;
+  updatedAt: string;
+};

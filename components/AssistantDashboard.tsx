@@ -34,6 +34,7 @@ import type {
   PineRebuild,
   TradeJournalEntry,
   TradingViewAlert,
+  TradingViewPnlState,
   WorkspaceNote
 } from "@/types";
 import type { OnlineIntelResult } from "@/lib/online-intel";
@@ -140,6 +141,7 @@ export function AssistantDashboard() {
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [chartLogs, setChartLogs] = useState<ChartWatchLog[]>([]);
   const [pineRebuilds, setPineRebuilds] = useState<PineRebuild[]>([]);
+  const [tradingViewPnlState, setTradingViewPnlState] = useState<TradingViewPnlState | null>(null);
   const [input, setInput] = useState("");
   const [memoryInput, setMemoryInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -289,7 +291,8 @@ export function AssistantDashboard() {
         agentsRes,
         chartRes,
         pineRes,
-        tvRes
+        tvRes,
+        tvPnlRes
       ] = await Promise.all([
         fetch("/api/chat?sessionId=primary"),
         fetch("/api/memories"),
@@ -298,7 +301,8 @@ export function AssistantDashboard() {
         fetch("/api/agents"),
         fetch("/api/chart-watch"),
         fetch("/api/pine-rebuild"),
-        fetch("/api/tradingview-alerts")
+        fetch("/api/tradingview-alerts"),
+        fetch("/api/tradingview-pnl")
       ]);
       setMessages((await chatRes.json()).messages);
       setMemories((await memoryRes.json()).memories);
@@ -308,17 +312,22 @@ export function AssistantDashboard() {
       setChartLogs((await chartRes.json()).logs);
       setPineRebuilds((await pineRes.json()).rebuilds);
       setTradingViewAlerts((await tvRes.json()).alerts);
+      setTradingViewPnlState((await tvPnlRes.json()).pnl);
     }
     refresh();
   }, []);
 
   useEffect(() => {
-    async function refreshTradingViewAlerts() {
-      const res = await fetch("/api/tradingview-alerts");
-      setTradingViewAlerts((await res.json()).alerts);
+    async function refreshTradingView() {
+      const [alertsRes, pnlRes] = await Promise.all([
+        fetch("/api/tradingview-alerts"),
+        fetch("/api/tradingview-pnl")
+      ]);
+      setTradingViewAlerts((await alertsRes.json()).alerts);
+      setTradingViewPnlState((await pnlRes.json()).pnl);
     }
 
-    const interval = window.setInterval(refreshTradingViewAlerts, 5000);
+    const interval = window.setInterval(refreshTradingView, 5000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -452,7 +461,8 @@ export function AssistantDashboard() {
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
-  const tradingViewPnl = getTradingViewPnl(tradingViewAlerts);
+  const savedTradingViewPnl = getSavedTradingViewPnl(tradingViewPnlState);
+  const tradingViewPnl = savedTradingViewPnl ?? getTradingViewPnl(tradingViewAlerts);
   const journalDayPnl = getTodayPnl(entries);
   const journalWeekPnl = getWeekPnl(entries);
   const pnl = tradingViewPnl.dayDollars ?? journalDayPnl;
@@ -1016,6 +1026,31 @@ function getWeekPnl(entries: TradeJournalEntry[]) {
       return entryDate >= start && entryDate <= today;
     })
     .reduce((total, entry) => total + (Number.parseFloat(entry.points) || 0), 0);
+}
+
+function getSavedTradingViewPnl(state: TradingViewPnlState | null) {
+  if (!state) return null;
+  const dayDollars = parseNumberValue(state.todayPnl);
+  const dayPoints = parseNumberValue(state.todayPoints);
+  const weekDollars = parseNumberValue(state.weekPnl);
+  const weekPoints = parseNumberValue(state.weekPoints);
+
+  if (
+    dayDollars === undefined &&
+    dayPoints === undefined &&
+    weekDollars === undefined &&
+    weekPoints === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    dayDollars,
+    dayPoints,
+    source: "APEX Analytics",
+    weekDollars,
+    weekPoints
+  };
 }
 
 function getTradingViewPnl(alerts: TradingViewAlert[]) {
