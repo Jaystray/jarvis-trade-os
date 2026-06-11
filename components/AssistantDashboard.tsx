@@ -63,6 +63,10 @@ type SpeechRecognitionLike = {
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
 };
+type AlertPnlValues = {
+  dollars?: number;
+  points?: number;
+};
 
 declare global {
   interface Window {
@@ -309,6 +313,16 @@ export function AssistantDashboard() {
   }, []);
 
   useEffect(() => {
+    async function refreshTradingViewAlerts() {
+      const res = await fetch("/api/tradingview-alerts");
+      setTradingViewAlerts((await res.json()).alerts);
+    }
+
+    const interval = window.setInterval(refreshTradingViewAlerts, 5000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
@@ -438,8 +452,11 @@ export function AssistantDashboard() {
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
-  const pnl = getTodayPnl(entries);
-  const weekPnl = getWeekPnl(entries);
+  const tradingViewPnl = getTradingViewPnl(tradingViewAlerts);
+  const journalDayPnl = getTodayPnl(entries);
+  const journalWeekPnl = getWeekPnl(entries);
+  const pnl = tradingViewPnl.dayDollars ?? journalDayPnl;
+  const weekPnl = tradingViewPnl.weekDollars ?? tradingViewPnl.dayDollars ?? journalWeekPnl;
   const latestDirection = entries[0]?.direction;
   const bias =
     latestDirection === "Long" ? "long" : latestDirection === "Short" ? "short" : "neutral";
@@ -462,7 +479,15 @@ export function AssistantDashboard() {
         onMemoryInput={setMemoryInput}
         onSaveMemory={saveMemory}
       />
-      <FloatingPnl dayPnl={pnl} targetMax={400} targetMin={250} weekPnl={weekPnl} />
+      <FloatingPnl
+        dayPnl={pnl}
+        dayPoints={tradingViewPnl.dayPoints}
+        source={tradingViewPnl.source}
+        targetMax={400}
+        targetMin={250}
+        weekPnl={weekPnl}
+        weekPoints={tradingViewPnl.weekPoints ?? tradingViewPnl.dayPoints}
+      />
       <FloatingOnlineIntel intel={latestIntel} />
       <FloatingLauncherStatus launch={latestLaunch} />
       <FloatingTradingViewFeed alerts={tradingViewAlerts} />
@@ -591,9 +616,12 @@ function CornerClusters(props: {
 
 function FloatingPnl(props: {
   dayPnl: number;
+  dayPoints?: number;
+  source?: string;
   targetMax: number;
   targetMin: number;
   weekPnl: number;
+  weekPoints?: number;
 }) {
   const dayClass = props.dayPnl >= 0 ? "is-profit" : "is-loss";
   const weekClass = props.weekPnl >= 0 ? "is-profit" : "is-loss";
@@ -603,12 +631,23 @@ function FloatingPnl(props: {
       <p>
         Today <span className={dayClass}>${Math.round(props.dayPnl)}</span>
       </p>
+      {typeof props.dayPoints === "number" && (
+        <p>
+          Points <span className={dayClass}>{formatPoints(props.dayPoints)}</span>
+        </p>
+      )}
       <p>
         Week <span className={weekClass}>${Math.round(props.weekPnl)}</span>
       </p>
+      {typeof props.weekPoints === "number" && (
+        <p>
+          Wk pts <span className={weekClass}>{formatPoints(props.weekPoints)}</span>
+        </p>
+      )}
       <p>
         Target ${props.targetMin}-${props.targetMax}
       </p>
+      {props.source && <p className="pnl-source">{props.source}</p>}
     </div>
   );
 }
@@ -638,6 +677,14 @@ function FloatingLauncherStatus(props: { launch: LocalLaunchResult | null }) {
 
 function FloatingTradingViewFeed(props: { alerts: TradingViewAlert[] }) {
   const latest = props.alerts[0];
+  const latestDollars = latest
+    ? readAlertNumber(latest, ["pnl", "profit", "profitUsd", "totalPnl", "dollars"]) ??
+      parseDollarValue(latest.message)
+    : undefined;
+  const latestPoints = latest
+    ? readAlertNumber(latest, ["points", "pts", "profitPoints", "totalPoints"]) ??
+      parsePointValue(latest.message)
+    : undefined;
   return (
     <div className="floating-tv-feed">
       <p className="corner-label">TradingView</p>
@@ -647,6 +694,13 @@ function FloatingTradingViewFeed(props: { alerts: TradingViewAlert[] }) {
           <p>
             {latest.action} {latest.price}
           </p>
+          {(latestDollars !== undefined || latestPoints !== undefined) && (
+            <p>
+              {latestDollars !== undefined ? `$${Math.round(latestDollars)}` : ""}
+              {latestDollars !== undefined && latestPoints !== undefined ? " / " : ""}
+              {latestPoints !== undefined ? `${formatPoints(latestPoints)} pts` : ""}
+            </p>
+          )}
           <p>{latest.message.slice(0, 80)}</p>
         </>
       ) : (
@@ -961,6 +1015,96 @@ function getWeekPnl(entries: TradeJournalEntry[]) {
       return entryDate >= start && entryDate <= today;
     })
     .reduce((total, entry) => total + (Number.parseFloat(entry.points) || 0), 0);
+}
+
+function getTradingViewPnl(alerts: TradingViewAlert[]) {
+  const today = new Date();
+  const start = new Date(today);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  start.setHours(0, 0, 0, 0);
+
+  const todayKey = today.toISOString().slice(0, 10);
+  const todayAlerts = alerts.filter((alert) => alert.createdAt.slice(0, 10) === todayKey);
+  const weekAlerts = alerts.filter((alert) => new Date(`${alert.createdAt.replace(" ", "T")}`) >= start);
+  const dayValues = getLatestAlertPnl(todayAlerts);
+  const weekValues = getLatestAlertPnl(weekAlerts);
+
+  return {
+    dayDollars: dayValues.dollars,
+    dayPoints: dayValues.points,
+    source: dayValues.dollars !== undefined || dayValues.points !== undefined ? "TradingView" : undefined,
+    weekDollars: weekValues.dollars,
+    weekPoints: weekValues.points
+  };
+}
+
+function getLatestAlertPnl(alerts: TradingViewAlert[]): AlertPnlValues {
+  for (const alert of alerts) {
+    const dollars = readAlertNumber(alert, [
+      "dayPnl",
+      "dailyPnl",
+      "pnl",
+      "profit",
+      "profitUsd",
+      "profit_usd",
+      "dollars",
+      "netProfit",
+      "net_profit",
+      "totalPnl",
+      "total_pnl"
+    ]);
+    const points = readAlertNumber(alert, [
+      "dayPoints",
+      "dailyPoints",
+      "points",
+      "pts",
+      "profitPoints",
+      "profit_points",
+      "totalPoints",
+      "total_points"
+    ]);
+    const parsedDollars = dollars ?? parseDollarValue(alert.message);
+    const parsedPoints = points ?? parsePointValue(alert.message);
+    if (parsedDollars !== undefined || parsedPoints !== undefined) {
+      return {
+        dollars: parsedDollars ?? (parsedPoints !== undefined ? parsedPoints * 2 : undefined),
+        points: parsedPoints
+      };
+    }
+  }
+  return {};
+}
+
+function readAlertNumber(alert: TradingViewAlert, keys: string[]) {
+  for (const key of keys) {
+    const value = alert.rawPayload[key];
+    const parsed = parseNumberValue(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function parseNumberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const parsed = Number.parseFloat(value.replace(/[$,\s]/g, ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseDollarValue(text: string) {
+  const match = text.match(/\$ ?(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)/);
+  return match?.[1] ? parseNumberValue(match[1]) : undefined;
+}
+
+function parsePointValue(text: string) {
+  const match = text.match(/(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)\s*(?:points|pts)\b/i);
+  return match?.[1] ? parseNumberValue(match[1]) : undefined;
+}
+
+function formatPoints(points: number) {
+  return Number.isInteger(points) ? String(points) : points.toFixed(1);
 }
 
 function SessionCore(props: {

@@ -285,7 +285,7 @@ body {
 }
 
 .top-left {
-  left: 96px;
+  left: 320px;
   top: 24px;
 }
 
@@ -333,6 +333,11 @@ body {
   color: #ef5468;
 }
 
+.floating-pnl .pnl-source {
+  margin-top: 4px;
+  color: rgba(240, 165, 46, 0.72);
+}
+
 .floating-online {
   position: fixed;
   right: 24px;
@@ -360,7 +365,7 @@ body {
 
 .floating-launcher {
   position: fixed;
-  left: 96px;
+  left: 320px;
   bottom: 96px;
   z-index: 6;
   max-width: 260px;
@@ -383,7 +388,7 @@ body {
 
 .floating-tv-feed {
   position: fixed;
-  left: 96px;
+  left: 320px;
   top: 218px;
   z-index: 6;
   max-width: 300px;
@@ -405,7 +410,7 @@ body {
 
 .chart-intake {
   position: fixed;
-  left: 96px;
+  left: 320px;
   top: 128px;
   z-index: 6;
   display: grid;
