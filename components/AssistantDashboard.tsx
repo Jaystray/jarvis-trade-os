@@ -753,7 +753,7 @@ function FloatingEconomicCalendar(props: { error: string; events: EconomicCalend
         <p className="economic-calendar-error">{props.error}</p>
       ) : props.events.length ? (
         <div className="economic-calendar-list">
-          {props.events.slice(0, 8).map((event) => (
+          {props.events.slice(0, 3).map((event) => (
             <article className="economic-calendar-event" key={`${event.date}-${event.time}-${event.eventName}`}>
               <div>
                 <p className="economic-calendar-time">
@@ -761,20 +761,9 @@ function FloatingEconomicCalendar(props: { error: string; events: EconomicCalend
                 </p>
                 <h3>{event.eventName}</h3>
               </div>
-              <dl>
-                <div>
-                  <dt>Forecast</dt>
-                  <dd>{event.forecast || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Previous</dt>
-                  <dd>{event.previous || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Actual</dt>
-                  <dd>{event.actual || "Pending"}</dd>
-                </div>
-              </dl>
+              <p className="economic-calendar-values">
+                F {event.forecast || "-"} · P {event.previous || "-"} · A {event.actual || "Pending"}
+              </p>
             </article>
           ))}
         </div>
