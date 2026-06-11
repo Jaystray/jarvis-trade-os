@@ -49,7 +49,7 @@ export function normalizeTradingViewPayload(payload: Record<string, unknown>) {
   };
 }
 
-export function validateTradingViewSecret(request: Request) {
+export function validateTradingViewSecret(request: Request, payload?: Record<string, unknown>) {
   const secret = process.env.TRADINGVIEW_WEBHOOK_SECRET?.trim();
   if (!secret && process.env.NODE_ENV !== "production") return true;
   if (!secret) return false;
@@ -58,6 +58,9 @@ export function validateTradingViewSecret(request: Request) {
   const querySecret = url.searchParams.get("secret");
   const headerSecret = request.headers.get("x-jarvis-secret");
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const payloadSecret = payload
+    ? readPayloadValue(payload, ["secret", "password", "webhookPassword", "webhook_password"])
+    : "";
 
-  return [querySecret, headerSecret, bearer].includes(secret);
+  return [querySecret, headerSecret, bearer, payloadSecret].includes(secret);
 }

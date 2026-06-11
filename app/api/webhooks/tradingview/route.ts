@@ -10,11 +10,12 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  if (!validateTradingViewSecret(request)) {
+  const payload = (await request.json()) as Record<string, unknown>;
+
+  if (!validateTradingViewSecret(request, payload)) {
     return NextResponse.json({ error: "Unauthorized webhook." }, { status: 401 });
   }
 
-  const payload = (await request.json()) as Record<string, unknown>;
   const normalized = normalizeTradingViewPayload(payload);
   const db = getDb();
 
