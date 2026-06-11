@@ -1029,8 +1029,8 @@ function getTradingViewPnl(alerts: TradingViewAlert[]) {
   const todayKey = today.toISOString().slice(0, 10);
   const todayAlerts = alerts.filter((alert) => alert.createdAt.slice(0, 10) === todayKey);
   const weekAlerts = alerts.filter((alert) => new Date(`${alert.createdAt.replace(" ", "T")}`) >= start);
-  const dayValues = getLatestAlertPnl(todayAlerts);
-  const weekValues = getLatestAlertPnl(weekAlerts);
+  const dayValues = getLatestAggregatePnl(todayAlerts, "day");
+  const weekValues = getLatestAggregatePnl(weekAlerts, "week");
 
   return {
     dayDollars: dayValues.dollars,
@@ -1041,30 +1041,46 @@ function getTradingViewPnl(alerts: TradingViewAlert[]) {
   };
 }
 
+function getLatestAggregatePnl(alerts: TradingViewAlert[], period: "day" | "week"): AlertPnlValues {
+  for (const alert of alerts) {
+    const dollars = readAlertNumber(alert, aggregateDollarKeys(period));
+    const points = readAlertNumber(alert, aggregatePointKeys(period));
+    const parsedDollars = parseLabeledDollarValue(alert.message, period);
+    const parsedPoints = parseLabeledPointValue(alert.message, period);
+    if (
+      dollars !== undefined ||
+      points !== undefined ||
+      parsedDollars !== undefined ||
+      parsedPoints !== undefined
+    ) {
+      const finalPoints = points ?? parsedPoints;
+      return {
+        dollars: dollars ?? parsedDollars ?? (finalPoints !== undefined ? finalPoints * 2 : undefined),
+        points: finalPoints
+      };
+    }
+  }
+  return {};
+}
+
 function getLatestAlertPnl(alerts: TradingViewAlert[]): AlertPnlValues {
   for (const alert of alerts) {
     const dollars = readAlertNumber(alert, [
-      "dayPnl",
-      "dailyPnl",
       "pnl",
       "profit",
       "profitUsd",
       "profit_usd",
       "dollars",
-      "netProfit",
-      "net_profit",
-      "totalPnl",
-      "total_pnl"
+      "tradePnl",
+      "trade_pnl"
     ]);
     const points = readAlertNumber(alert, [
-      "dayPoints",
-      "dailyPoints",
       "points",
       "pts",
       "profitPoints",
       "profit_points",
-      "totalPoints",
-      "total_points"
+      "tradePoints",
+      "trade_points"
     ]);
     const parsedDollars = dollars ?? parseDollarValue(alert.message);
     const parsedPoints = points ?? parsePointValue(alert.message);
@@ -1076,6 +1092,64 @@ function getLatestAlertPnl(alerts: TradingViewAlert[]): AlertPnlValues {
     }
   }
   return {};
+}
+
+function aggregateDollarKeys(period: "day" | "week") {
+  return period === "day"
+    ? [
+        "todayPnl",
+        "today_pnl",
+        "todayDollars",
+        "today_dollars",
+        "dayPnl",
+        "day_pnl",
+        "dailyPnl",
+        "daily_pnl",
+        "dailyDollars",
+        "daily_dollars",
+        "dashboardPnl",
+        "dashboard_pnl"
+      ]
+    : [
+        "weekPnl",
+        "week_pnl",
+        "weeklyPnl",
+        "weekly_pnl",
+        "weekDollars",
+        "week_dollars",
+        "weeklyDollars",
+        "weekly_dollars"
+      ];
+}
+
+function aggregatePointKeys(period: "day" | "week") {
+  return period === "day"
+    ? [
+        "todayPoints",
+        "today_points",
+        "todayPts",
+        "today_pts",
+        "dayPoints",
+        "day_points",
+        "dayPts",
+        "day_pts",
+        "dailyPoints",
+        "daily_points",
+        "dailyPts",
+        "daily_pts",
+        "dashboardPoints",
+        "dashboard_points"
+      ]
+    : [
+        "weekPoints",
+        "week_points",
+        "weekPts",
+        "week_pts",
+        "weeklyPoints",
+        "weekly_points",
+        "weeklyPts",
+        "weekly_pts"
+      ];
 }
 
 function readAlertNumber(alert: TradingViewAlert, keys: string[]) {
@@ -1102,6 +1176,28 @@ function parseDollarValue(text: string) {
 function parsePointValue(text: string) {
   const match = text.match(/(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)\s*(?:points|pts)\b/i);
   return match?.[1] ? parseNumberValue(match[1]) : undefined;
+}
+
+function parseLabeledDollarValue(text: string, period: "day" | "week") {
+  const label = period === "day" ? "(?:today|day|daily)" : "(?:week|weekly)";
+  const afterLabel = text.match(new RegExp(`${label}[^$\\n\\r]*\\$ ?(-?\\d+(?:,\\d{3})*(?:\\.\\d+)?|-?\\d+(?:\\.\\d+)?)`, "i"));
+  if (afterLabel?.[1]) return parseNumberValue(afterLabel[1]);
+
+  const beforeLabel = text.match(new RegExp(`\\$ ?(-?\\d+(?:,\\d{3})*(?:\\.\\d+)?|-?\\d+(?:\\.\\d+)?)[^\\n\\r]*(?:${label})`, "i"));
+  return beforeLabel?.[1] ? parseNumberValue(beforeLabel[1]) : undefined;
+}
+
+function parseLabeledPointValue(text: string, period: "day" | "week") {
+  const label = period === "day" ? "(?:today|day|daily)" : "(?:week|weekly)";
+  const afterLabel = text.match(
+    new RegExp(`${label}[^\\n\\r]*?(-?\\d+(?:,\\d{3})*(?:\\.\\d+)?|-?\\d+(?:\\.\\d+)?)\\s*(?:points|pts)`, "i")
+  );
+  if (afterLabel?.[1]) return parseNumberValue(afterLabel[1]);
+
+  const beforeLabel = text.match(
+    new RegExp(`(-?\\d+(?:,\\d{3})*(?:\\.\\d+)?|-?\\d+(?:\\.\\d+)?)\\s*(?:points|pts)[^\\n\\r]*(?:${label})`, "i")
+  );
+  return beforeLabel?.[1] ? parseNumberValue(beforeLabel[1]) : undefined;
 }
 
 function formatTradingViewAlert(alert: TradingViewAlert) {
