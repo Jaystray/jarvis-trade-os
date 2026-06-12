@@ -180,6 +180,7 @@ export function AssistantDashboard() {
   const isSendingRef = useRef(false);
   const isRecognitionRunningRef = useRef(false);
   const isGreetingActiveRef = useRef(false);
+  const isSpeechOutputUnlockedRef = useRef(false);
   const listeningHoldUntilRef = useRef(0);
   const listeningWindowActiveRef = useRef(false);
   const listeningRestartTimerRef = useRef<number | null>(null);
@@ -204,6 +205,28 @@ export function AssistantDashboard() {
   const keepVoiceSessionActive = useCallback(() => {
     voiceModeRef.current = true;
     setVoiceMode(true);
+  }, []);
+
+  const unlockSpeechOutput = useCallback(() => {
+    if (!("speechSynthesis" in window) || isSpeechOutputUnlockedRef.current) return;
+
+    try {
+      const unlockUtterance = new SpeechSynthesisUtterance(" ");
+      unlockUtterance.volume = 0;
+      unlockUtterance.rate = 1;
+      unlockUtterance.pitch = 1;
+      unlockUtterance.onend = () => {
+        isSpeechOutputUnlockedRef.current = true;
+        console.log("[Jarvis voice] speech output unlocked.");
+      };
+      unlockUtterance.onerror = (event) => {
+        console.log("[Jarvis voice] speech unlock error:", event.error);
+      };
+      window.speechSynthesis.speak(unlockUtterance);
+      console.log("[Jarvis voice] speech output unlock requested.");
+    } catch (error) {
+      console.log("[Jarvis voice] speech output unlock threw", error);
+    }
   }, []);
 
   const stopVoiceListening = useCallback((status = "Voice mode stopped.") => {
@@ -759,6 +782,7 @@ export function AssistantDashboard() {
       }
     }
 
+    unlockSpeechOutput();
     beginListeningWindow("core tap user gesture", { startRecognition: false });
     void logMicrophonePermission("core tap after start");
     console.log("[Jarvis voice] center core tapped. Listening without greeting.");
