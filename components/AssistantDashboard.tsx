@@ -169,6 +169,7 @@ export function AssistantDashboard() {
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [listeningWindowActive, setListeningWindowActive] = useState(false);
+  const [listeningUntil, setListeningUntil] = useState(0);
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is ready.");
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -202,6 +203,7 @@ export function AssistantDashboard() {
     listeningWindowActiveRef.current = false;
     setVoiceMode(false);
     setListeningWindowActive(false);
+    setListeningUntil(0);
     listeningHoldUntilRef.current = 0;
     if (listeningRestartTimerRef.current !== null) {
       window.clearTimeout(listeningRestartTimerRef.current);
@@ -315,6 +317,7 @@ export function AssistantDashboard() {
 
     listeningHoldUntilRef.current = Date.now() + minimumVoiceListenMs;
     listeningWindowActiveRef.current = true;
+    setListeningUntil(listeningHoldUntilRef.current);
     setIsListening(true);
     setListeningWindowActive(true);
     setLiveTranscript("");
@@ -334,6 +337,7 @@ export function AssistantDashboard() {
       setVoiceMode(false);
       setIsListening(false);
       setListeningWindowActive(false);
+      setListeningUntil(0);
       setVoiceStatus("Voice mode is ready.");
       recognitionRef.current?.stop();
       console.log("[Jarvis voice] 10 second listening window closed.", { reason });
@@ -712,7 +716,8 @@ export function AssistantDashboard() {
   const latestDirection = entries[0]?.direction;
   const bias =
     latestDirection === "Long" ? "long" : latestDirection === "Short" ? "short" : "neutral";
-  const coreState = listeningWindowActive || voiceMode || isListening ? "listening" : isSpeaking ? "speaking" : "idle";
+  const isInListeningWindow = Boolean(now && listeningUntil > now.getTime());
+  const coreState = isInListeningWindow || listeningWindowActive || voiceMode || isListening ? "listening" : isSpeaking ? "speaking" : "idle";
   const cycle = now
     ? getAmdCycle(now)
     : { activeMark: null, angle: 0, countdown: "--:--", inPivotWindow: false };
@@ -759,9 +764,9 @@ export function AssistantDashboard() {
           />
         </button>
         <p className="core-hint">tap core or say &apos;Jarvis&apos;</p>
-        {(listeningWindowActive || voiceMode || isListening) && (
-          <p className={`voice-listening-label ${listeningWindowActive || isListening ? "is-active" : ""}`}>
-            {listeningWindowActive || isListening ? "Listening..." : "Voice mode active"}
+        {(isInListeningWindow || listeningWindowActive || voiceMode || isListening) && (
+          <p className={`voice-listening-label ${isInListeningWindow || listeningWindowActive || isListening ? "is-active" : ""}`}>
+            {isInListeningWindow || listeningWindowActive || isListening ? "Listening..." : "Voice mode active"}
           </p>
         )}
         <SubtitleStack
