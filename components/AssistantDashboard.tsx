@@ -144,12 +144,6 @@ function isStopVoiceCommand(transcript: string) {
   ].includes(normalized);
 }
 
-function getJarvisGreeting(date = new Date()) {
-  const hour = date.getHours();
-  const period = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-  return `Good ${period}, Jason.`;
-}
-
 export function AssistantDashboard() {
   const [active, setActive] = useState<ModuleId>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -762,17 +756,9 @@ export function AssistantDashboard() {
       }
     }
 
-    const greeting = getJarvisGreeting();
-    addTranscriptLine(greeting);
-    isGreetingActiveRef.current = true;
     beginListeningWindow("core tap user gesture", { startRecognition: false });
     void logMicrophonePermission("core tap after start");
-    console.log("[Jarvis voice] center core tapped. Recognition starts before greeting:", greeting);
-    speak(greeting, () => {
-      isGreetingActiveRef.current = false;
-      console.log("[Jarvis voice] greeting complete. Resetting post-greeting 10 second listener.");
-      beginListeningWindow("post greeting");
-    });
+    console.log("[Jarvis voice] center core tapped. Listening without greeting.");
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
