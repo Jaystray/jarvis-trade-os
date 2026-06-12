@@ -378,10 +378,39 @@ export function AssistantDashboard() {
   }, [keepVoiceSessionActive, startListening]);
 
   const speak = useCallback((text: string, afterSpeech?: () => void) => {
-    console.log("[Jarvis voice] speech output disabled:", text.slice(0, 120));
-    isSpeakingRef.current = false;
-    setIsSpeaking(false);
-    afterSpeech?.();
+    if (!("speechSynthesis" in window)) {
+      console.log("[Jarvis voice] speechSynthesis unavailable; cannot speak reply.");
+      afterSpeech?.();
+      return;
+    }
+
+    isSpeakingRef.current = true;
+    setIsSpeaking(true);
+    setVoiceStatus("Speaking response.");
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.98;
+    utterance.pitch = 0.86;
+    utterance.onstart = () => {
+      console.log("[Jarvis voice] response speech started:", text.slice(0, 120));
+    };
+    utterance.onend = () => {
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      console.log("[Jarvis voice] response speech ended.");
+      afterSpeech?.();
+    };
+    utterance.onerror = (event) => {
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      setVoiceStatus("Speech output was blocked. Check browser audio permissions.");
+      console.log("[Jarvis voice] response speech error:", event.error);
+      afterSpeech?.();
+    };
+
+    console.log("[Jarvis voice] speechSynthesis.speak() response requested:", text.slice(0, 120));
+    window.speechSynthesis.speak(utterance);
   }, []);
 
   const stopSpeaking = useCallback(() => {
