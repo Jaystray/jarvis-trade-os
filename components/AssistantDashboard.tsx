@@ -191,6 +191,22 @@ export function AssistantDashboard() {
   const listeningRestartTimerRef = useRef<number | null>(null);
   const listeningWindowTimerRef = useRef<number | null>(null);
 
+  const logMicrophonePermission = useCallback(async (context: string) => {
+    if (!("permissions" in navigator)) {
+      console.log("[Jarvis voice] microphone permission unavailable", { context });
+      return;
+    }
+
+    try {
+      const permission = await navigator.permissions.query({
+        name: "microphone" as PermissionName
+      });
+      console.log("[Jarvis voice] microphone permission", { context, state: permission.state });
+    } catch (error) {
+      console.log("[Jarvis voice] microphone permission query failed", { context, error });
+    }
+  }, []);
+
   const keepVoiceSessionActive = useCallback(() => {
     voiceModeRef.current = true;
     setVoiceMode(true);
@@ -225,6 +241,10 @@ export function AssistantDashboard() {
   }, [voiceMode]);
 
   useEffect(() => {
+    void logMicrophonePermission("dashboard mount");
+  }, [logMicrophonePermission]);
+
+  useEffect(() => {
     try {
       const cached = window.localStorage.getItem(tradingViewPnlCacheKey);
       if (cached) setTradingViewPnlCache(JSON.parse(cached) as TradingViewPnlCache);
@@ -257,7 +277,7 @@ export function AssistantDashboard() {
     setTranscriptLines((current) => [clean, ...current.filter((item) => item !== clean)].slice(0, 5));
   }, []);
 
-  const startListening = useCallback((interruptOnly = false) => {
+  const startListening = useCallback((interruptOnly = false, options?: { forceRestart?: boolean }) => {
     const recognition = recognitionRef.current;
     keepVoiceSessionActive();
     if (!recognition) {
@@ -274,21 +294,29 @@ export function AssistantDashboard() {
     if (listeningHoldUntilRef.current <= Date.now()) {
       listeningHoldUntilRef.current = Date.now() + minimumVoiceListenMs;
     }
-    if (isRecognitionRunningRef.current) {
+    if (isRecognitionRunningRef.current && !options?.forceRestart) {
       setIsListening(true);
       setListeningWindowActive(true);
       setVoiceStatus(interruptOnly ? "Listening for stop command." : "Listening. Speak your command.");
       console.log("[Jarvis voice] recognition.start() skipped; already running", {
+        continuous: recognition.continuous,
         holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
       });
       return;
     }
+    if (isRecognitionRunningRef.current && options?.forceRestart) {
+      console.log("[Jarvis voice] recognition restart requested while active; stopping first.");
+      recognition.stop();
+      isRecognitionRunningRef.current = false;
+    }
     console.log("[Jarvis voice] recognition.start() requested", {
+      continuous: recognition.continuous,
       greetingActive: isGreetingActiveRef.current,
       holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
     });
     try {
       recognition.start();
+      isRecognitionRunningRef.current = true;
       setIsListening(true);
       setListeningWindowActive(true);
       setLiveTranscript("");
@@ -297,6 +325,17 @@ export function AssistantDashboard() {
       );
       console.log("[Jarvis voice] listening started.");
     } catch (error) {
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        console.log("[Jarvis voice] recognition.start() InvalidStateError; stopping active session before retry.");
+        try {
+          recognition.stop();
+        } catch (stopError) {
+          console.log("[Jarvis voice] recognition.stop() before retry threw", stopError);
+        }
+        isRecognitionRunningRef.current = false;
+        window.setTimeout(() => startListening(interruptOnly), 200);
+        return;
+      }
       setVoiceStatus("Listening is already active.");
       setIsListening(true);
       setListeningWindowActive(true);
@@ -304,7 +343,7 @@ export function AssistantDashboard() {
     }
   }, [keepVoiceSessionActive]);
 
-  const beginListeningWindow = useCallback((reason = "manual") => {
+  const beginListeningWindow = useCallback((reason = "manual", options?: { startRecognition?: boolean }) => {
     keepVoiceSessionActive();
     if (listeningRestartTimerRef.current !== null) {
       window.clearTimeout(listeningRestartTimerRef.current);
@@ -327,7 +366,7 @@ export function AssistantDashboard() {
       holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
     });
 
-    startListening();
+    if (options?.startRecognition !== false) startListening();
     listeningWindowTimerRef.current = window.setTimeout(() => {
       listeningWindowTimerRef.current = null;
       if (Date.now() < listeningHoldUntilRef.current) return;
@@ -692,11 +731,42 @@ export function AssistantDashboard() {
       stopVoiceListening("Voice mode stopped.");
       return;
     }
-    keepVoiceSessionActive();
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      setVoiceStatus("Voice recognition is not available in this browser.");
+      console.log("[Jarvis voice] core tap failed; SpeechRecognition is not available.");
+      return;
+    }
+
+    listeningHoldUntilRef.current = Date.now() + minimumVoiceListenMs;
+    console.log("[Jarvis voice] core tap direct recognition.start()", {
+      continuous: recognition.continuous,
+      holdUntil: new Date(listeningHoldUntilRef.current).toISOString(),
+      speechSynthesisSpeaking: "speechSynthesis" in window ? window.speechSynthesis.speaking : false
+    });
+    try {
+      recognition.start();
+      isRecognitionRunningRef.current = true;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        console.log("[Jarvis voice] core tap start hit InvalidStateError; stopping before retry.");
+        try {
+          recognition.stop();
+        } catch (stopError) {
+          console.log("[Jarvis voice] core tap stop before retry threw", stopError);
+        }
+        isRecognitionRunningRef.current = false;
+        window.setTimeout(() => startListening(false, { forceRestart: true }), 200);
+      } else {
+        console.log("[Jarvis voice] core tap direct recognition.start() threw", error);
+      }
+    }
+
     const greeting = getJarvisGreeting();
     addTranscriptLine(greeting);
     isGreetingActiveRef.current = true;
-    beginListeningWindow("core tap user gesture");
+    beginListeningWindow("core tap user gesture", { startRecognition: false });
+    void logMicrophonePermission("core tap after start");
     console.log("[Jarvis voice] center core tapped. Recognition starts before greeting:", greeting);
     speak(greeting, () => {
       isGreetingActiveRef.current = false;
