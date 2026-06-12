@@ -81,6 +81,7 @@ type TradingViewPnlCache = TradingViewPnlValues & {
 };
 
 const tradingViewPnlCacheKey = "jarvis-tradingview-pnl";
+const minimumVoiceListenMs = 10000;
 
 declare global {
   interface Window {
@@ -176,6 +177,8 @@ export function AssistantDashboard() {
   const voiceModeRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isSendingRef = useRef(false);
+  const listeningHoldUntilRef = useRef(0);
+  const listeningRestartTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     voiceModeRef.current = voiceMode;
@@ -220,15 +223,24 @@ export function AssistantDashboard() {
       setVoiceStatus("Voice recognition is not available in this browser.");
       return;
     }
+    if (listeningRestartTimerRef.current !== null) {
+      window.clearTimeout(listeningRestartTimerRef.current);
+      listeningRestartTimerRef.current = null;
+    }
+    listeningHoldUntilRef.current = Math.max(
+      listeningHoldUntilRef.current,
+      Date.now() + minimumVoiceListenMs
+    );
     try {
       recognition.start();
       setIsListening(true);
       setLiveTranscript("");
       setVoiceStatus(
-        interruptOnly ? "Speaking. Say stop to interrupt." : "Listening. Speak your command."
+        interruptOnly ? "Listening for stop command." : "Listening. Speak your command."
       );
     } catch {
       setVoiceStatus("Listening is already active.");
+      setIsListening(true);
     }
   }, []);
 
@@ -255,10 +267,7 @@ export function AssistantDashboard() {
       afterSpeech?.();
     };
     window.speechSynthesis.speak(utterance);
-    if (voiceModeRef.current) {
-      window.setTimeout(() => startListening(true), 250);
-    }
-  }, [startListening]);
+  }, []);
 
   const stopSpeaking = useCallback(() => {
     if (!("speechSynthesis" in window)) return;
@@ -421,6 +430,11 @@ export function AssistantDashboard() {
             return;
           }
           setVoiceMode(false);
+          listeningHoldUntilRef.current = 0;
+          if (listeningRestartTimerRef.current !== null) {
+            window.clearTimeout(listeningRestartTimerRef.current);
+            listeningRestartTimerRef.current = null;
+          }
           recognitionRef.current?.stop();
           setIsListening(false);
           setVoiceStatus("Voice mode stopped.");
@@ -439,8 +453,9 @@ export function AssistantDashboard() {
       }
     };
     recognition.onerror = (event) => {
-      setIsListening(false);
+      const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setIsListening(false);
         setVoiceStatus("Microphone access was blocked. Allow microphone access in the browser.");
         setVoiceMode(false);
         setLiveTranscript("");
@@ -450,23 +465,34 @@ export function AssistantDashboard() {
       if (event.error === "no-speech" || event.error === "aborted") {
         setVoiceStatus("Still listening. Ask your question when ready.");
         if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-          window.setTimeout(startListening, 500);
+          setIsListening(shouldHoldListening);
+          listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 200 : 500);
+        } else {
+          setIsListening(false);
         }
         return;
       }
 
       setVoiceStatus("Voice recognition paused. Listening will retry.");
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-        window.setTimeout(startListening, 800);
+        setIsListening(shouldHoldListening);
+        listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 250 : 800);
       } else {
+        setIsListening(false);
         setVoiceMode(false);
       }
       setLiveTranscript("");
     };
     recognition.onend = () => {
-      setIsListening(false);
+      const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-        window.setTimeout(startListening, 350);
+        setIsListening(shouldHoldListening);
+        setVoiceStatus(
+          shouldHoldListening ? "Still listening. Ask your question when ready." : "Listening paused. Restarting."
+        );
+        listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 200 : 350);
+      } else {
+        setIsListening(false);
       }
     };
     recognitionRef.current = recognition;
@@ -520,6 +546,11 @@ export function AssistantDashboard() {
   function toggleMic() {
     if (voiceMode || isListening) {
       setVoiceMode(false);
+      listeningHoldUntilRef.current = 0;
+      if (listeningRestartTimerRef.current !== null) {
+        window.clearTimeout(listeningRestartTimerRef.current);
+        listeningRestartTimerRef.current = null;
+      }
       recognitionRef.current?.stop();
       setIsListening(false);
       setLiveTranscript("");
