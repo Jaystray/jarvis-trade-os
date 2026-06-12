@@ -106,6 +106,7 @@ export type TradingViewPnlState = {
 
 export type EconomicCalendarEvent = {
   date: string;
+  dateKey?: string;
   time: string;
   eventName: string;
   impactLevel: "high";

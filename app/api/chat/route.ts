@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb, id } from "@/lib/db";
+import {
+  formatEconomicCalendarReply,
+  getHighImpactEconomicEvents,
+  isEconomicCalendarQuestion
+} from "@/lib/economic-calendar";
 import { detectLaunchIntent, launchLocalTarget } from "@/lib/local-launch";
 import { getOnlineIntel } from "@/lib/online-intel";
 import { generateAssistantReply } from "@/lib/openai";
@@ -85,10 +90,18 @@ export async function POST(request: Request) {
     const launchTargetId = detectLaunchIntent(message);
     const localLaunch = launchTargetId ? await launchLocalTarget(launchTargetId) : null;
     const relevantMemories = getRelevantMemories(message);
-    const onlineIntel = await getOnlineIntel(message);
-    const reply = localLaunch
-      ? localLaunch.message
-      : await generateAssistantReply(message, relevantMemories, onlineIntel);
+    const calendarEvents = isEconomicCalendarQuestion(message)
+      ? await getHighImpactEconomicEvents()
+      : null;
+    const onlineIntel = calendarEvents ? null : await getOnlineIntel(message);
+    let reply: string;
+    if (localLaunch) {
+      reply = localLaunch.message;
+    } else if (calendarEvents) {
+      reply = formatEconomicCalendarReply(calendarEvents, message);
+    } else {
+      reply = await generateAssistantReply(message, relevantMemories, onlineIntel);
+    }
 
     if (!persist) {
       return NextResponse.json({
