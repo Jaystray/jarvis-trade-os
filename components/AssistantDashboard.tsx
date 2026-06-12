@@ -396,7 +396,7 @@ export function AssistantDashboard() {
       return;
     }
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.onresult = (event) => {
@@ -440,12 +440,27 @@ export function AssistantDashboard() {
     };
     recognition.onerror = (event) => {
       setIsListening(false);
-      setVoiceStatus(
-        event.error === "not-allowed"
-          ? "Microphone access was blocked. Allow microphone access in the browser."
-          : "Voice recognition stopped. Press Start Voice to try again."
-      );
-      setVoiceMode(false);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setVoiceStatus("Microphone access was blocked. Allow microphone access in the browser.");
+        setVoiceMode(false);
+        setLiveTranscript("");
+        return;
+      }
+
+      if (event.error === "no-speech" || event.error === "aborted") {
+        setVoiceStatus("Still listening. Ask your question when ready.");
+        if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
+          window.setTimeout(startListening, 500);
+        }
+        return;
+      }
+
+      setVoiceStatus("Voice recognition paused. Listening will retry.");
+      if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
+        window.setTimeout(startListening, 800);
+      } else {
+        setVoiceMode(false);
+      }
       setLiveTranscript("");
     };
     recognition.onend = () => {
