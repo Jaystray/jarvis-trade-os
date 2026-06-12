@@ -180,7 +180,13 @@ export function AssistantDashboard() {
   const listeningHoldUntilRef = useRef(0);
   const listeningRestartTimerRef = useRef<number | null>(null);
 
+  const keepVoiceSessionActive = useCallback(() => {
+    voiceModeRef.current = true;
+    setVoiceMode(true);
+  }, []);
+
   const stopVoiceListening = useCallback((status = "Voice mode stopped.") => {
+    voiceModeRef.current = false;
     setVoiceMode(false);
     listeningHoldUntilRef.current = 0;
     if (listeningRestartTimerRef.current !== null) {
@@ -233,8 +239,10 @@ export function AssistantDashboard() {
 
   const startListening = useCallback((interruptOnly = false) => {
     const recognition = recognitionRef.current;
+    keepVoiceSessionActive();
     if (!recognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
+      setIsListening(true);
       console.log("[Jarvis voice] SpeechRecognition is not available.");
       return;
     }
@@ -262,7 +270,7 @@ export function AssistantDashboard() {
       setIsListening(true);
       console.log("[Jarvis voice] recognition.start() was ignored because it is already active.");
     }
-  }, []);
+  }, [keepVoiceSessionActive]);
 
   const speak = useCallback((text: string, afterSpeech?: () => void) => {
     if (!("speechSynthesis" in window)) {
@@ -472,6 +480,7 @@ export function AssistantDashboard() {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setIsListening(false);
         setVoiceStatus("Microphone access was blocked. Allow microphone access in the browser.");
+        voiceModeRef.current = false;
         setVoiceMode(false);
         setLiveTranscript("");
         return;
@@ -479,8 +488,9 @@ export function AssistantDashboard() {
 
       if (event.error === "no-speech" || event.error === "aborted") {
         setVoiceStatus("Still listening. Ask your question when ready.");
-        if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-          setIsListening(shouldHoldListening);
+        if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
+          keepVoiceSessionActive();
+          setIsListening(true);
           listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 200 : 500);
         } else {
           setIsListening(false);
@@ -489,20 +499,21 @@ export function AssistantDashboard() {
       }
 
       setVoiceStatus("Voice recognition paused. Listening will retry.");
-      if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-        setIsListening(shouldHoldListening);
+      if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
+        keepVoiceSessionActive();
+        setIsListening(true);
         listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 250 : 800);
       } else {
         setIsListening(false);
-        setVoiceMode(false);
       }
       setLiveTranscript("");
     };
     recognition.onend = () => {
       const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
       console.log("[Jarvis voice] recognition ended.", { shouldHoldListening });
-      if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
-        setIsListening(shouldHoldListening);
+      if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
+        keepVoiceSessionActive();
+        setIsListening(true);
         setVoiceStatus(
           shouldHoldListening ? "Still listening. Ask your question when ready." : "Listening paused. Restarting."
         );
@@ -512,7 +523,7 @@ export function AssistantDashboard() {
       }
     };
     recognitionRef.current = recognition;
-  }, [addTranscriptLine, sendMessage, startListening, stopSpeaking, stopVoiceListening]);
+  }, [addTranscriptLine, keepVoiceSessionActive, sendMessage, startListening, stopSpeaking, stopVoiceListening]);
 
   async function saveMemory() {
     const content = memoryInput.trim();
@@ -564,14 +575,14 @@ export function AssistantDashboard() {
       stopVoiceListening("Voice mode stopped.");
       return;
     }
-    setVoiceMode(true);
+    keepVoiceSessionActive();
     const greeting = getJarvisGreeting();
     addTranscriptLine(greeting);
     setVoiceStatus(greeting);
     console.log("[Jarvis voice] center core tapped. Greeting started:", greeting);
     speak(greeting, () => {
       console.log("[Jarvis voice] greeting finished. Starting 10 second listener.");
-      startListening();
+      window.setTimeout(startListening, 150);
     });
   }
 
