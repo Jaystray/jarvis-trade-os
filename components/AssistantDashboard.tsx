@@ -378,40 +378,14 @@ export function AssistantDashboard() {
   }, [keepVoiceSessionActive, startListening]);
 
   const speak = useCallback((text: string, afterSpeech?: () => void) => {
-    if (!("speechSynthesis" in window)) {
-      console.log("[Jarvis voice] speechSynthesis unavailable; running afterSpeech immediately.");
-      afterSpeech?.();
-      return;
-    }
-    isSpeakingRef.current = true;
-    setIsSpeaking(true);
-    setVoiceStatus("Speaking response.");
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.98;
-    utterance.pitch = 0.86;
-    utterance.onstart = () => {
-      console.log("[Jarvis voice] greeting speech started:", text);
-    };
-    utterance.onend = () => {
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      console.log("[Jarvis voice] greeting speech ended:", text);
-      afterSpeech?.();
-    };
-    utterance.onerror = (event) => {
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      console.log("[Jarvis voice] greeting speech error:", event.error);
-      afterSpeech?.();
-    };
-    console.log("[Jarvis voice] speechSynthesis.speak() requested:", text);
-    window.speechSynthesis.speak(utterance);
+    console.log("[Jarvis voice] speech output disabled:", text.slice(0, 120));
+    isSpeakingRef.current = false;
+    setIsSpeaking(false);
+    afterSpeech?.();
   }, []);
 
   const stopSpeaking = useCallback(() => {
-    if (!("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     isSpeakingRef.current = false;
     setIsSpeaking(false);
     setVoiceStatus(voiceModeRef.current ? "Speech stopped. Listening will resume." : "Speech stopped.");
@@ -819,7 +793,7 @@ export function AssistantDashboard() {
             state={coreState}
           />
         </button>
-        <p className="core-hint">tap core or say &apos;Jarvis&apos;</p>
+        <p className="core-hint">tap core to listen</p>
         {(isInListeningWindow || listeningWindowActive || voiceMode || isListening) && (
           <p className={`voice-listening-label ${isInListeningWindow || listeningWindowActive || isListening ? "is-active" : ""}`}>
             {isInListeningWindow || listeningWindowActive || isListening ? "Listening..." : "Voice mode active"}
