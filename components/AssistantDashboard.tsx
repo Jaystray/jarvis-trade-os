@@ -631,12 +631,9 @@ export function AssistantDashboard() {
     keepVoiceSessionActive();
     const greeting = getJarvisGreeting();
     addTranscriptLine(greeting);
-    setVoiceStatus(greeting);
-    console.log("[Jarvis voice] center core tapped. Greeting started:", greeting);
-    speak(greeting, () => {
-      console.log("[Jarvis voice] greeting finished. Starting 10 second listener.");
-      window.setTimeout(beginListeningWindow, 150);
-    });
+    beginListeningWindow();
+    console.log("[Jarvis voice] center core tapped. Starting 10 second listener with greeting:", greeting);
+    speak(greeting);
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
@@ -650,7 +647,7 @@ export function AssistantDashboard() {
   const latestDirection = entries[0]?.direction;
   const bias =
     latestDirection === "Long" ? "long" : latestDirection === "Short" ? "short" : "neutral";
-  const coreState = isSpeaking ? "speaking" : listeningWindowActive || voiceMode || isListening ? "listening" : "idle";
+  const coreState = listeningWindowActive || voiceMode || isListening ? "listening" : isSpeaking ? "speaking" : "idle";
   const cycle = now
     ? getAmdCycle(now)
     : { activeMark: null, angle: 0, countdown: "--:--", inPivotWindow: false };
