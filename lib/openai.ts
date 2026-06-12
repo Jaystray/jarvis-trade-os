@@ -37,11 +37,10 @@ export async function generateAssistantReply(
         .join("\n\n");
     }
     return [
-      "API key is not configured yet, so I am running in local demo mode.",
-      "Here is how I would frame the next action:",
+      "OpenAI API key is not configured. Running in demo mode.",
       input.includes("Remember")
-        ? "I saved that as a memory and will use it as context in future replies."
-        : `I found ${memories.length} relevant memory note(s). For trading work, I would turn this into a specific checklist, execution rule, or review prompt.`
+        ? "Memory saved."
+        : `Memory notes found: ${memories.length}.`
     ].join("\n\n");
   }
 

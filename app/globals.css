@@ -607,14 +607,16 @@ body {
 .subtitle-stack {
   position: absolute;
   top: calc(100% + 26px);
-  width: min(760px, 90vw);
+  width: min(640px, 82vw);
   pointer-events: none;
 }
 
 .subtitle-line {
   margin: 0;
-  font-size: clamp(16px, 2.1vw, 28px);
-  line-height: 1.35;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.45;
+  text-wrap: pretty;
   color: rgba(213, 220, 234, 0.22);
 }
 
