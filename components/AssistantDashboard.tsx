@@ -141,7 +141,7 @@ function isStopVoiceCommand(transcript: string) {
 function getJarvisGreeting(date = new Date()) {
   const hour = date.getHours();
   const period = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-  return `Good ${period}, Jason. What are we working on this ${period}? Would you like me to open the charts?`;
+  return `Good ${period}, Jason.`;
 }
 
 export function AssistantDashboard() {
