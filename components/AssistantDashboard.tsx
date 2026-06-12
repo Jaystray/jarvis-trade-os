@@ -77,6 +77,7 @@ type AlertPnlValues = {
 type TradingViewPnlValues = {
   dayDollars?: number;
   dayPoints?: number;
+  lastUpdated?: string;
   source?: string;
   weekDollars?: number;
   weekPoints?: number;
@@ -822,6 +823,7 @@ export function AssistantDashboard() {
       <FloatingPnl
         dayPnl={pnl}
         dayPoints={tradingViewPnl.dayPoints}
+        lastUpdated={tradingViewPnl.lastUpdated}
         source={tradingViewPnl.source}
         targetMax={400}
         targetMin={250}
@@ -963,6 +965,7 @@ function CornerClusters(props: {
 function FloatingPnl(props: {
   dayPnl: number;
   dayPoints?: number;
+  lastUpdated?: string;
   source?: string;
   targetMax: number;
   targetMin: number;
@@ -994,6 +997,7 @@ function FloatingPnl(props: {
         Target ${props.targetMin}-${props.targetMax}
       </p>
       {props.source && <p className="pnl-source">{props.source}</p>}
+      {props.lastUpdated && <p className="pnl-source">Synced {formatPnlSyncTime(props.lastUpdated)}</p>}
     </div>
   );
 }
@@ -1399,7 +1403,8 @@ function mergeTradingViewPnl(
   return {
     dayDollars: livePnl.dayDollars ?? (useCachedDay ? cache?.dayDollars : undefined),
     dayPoints: livePnl.dayPoints ?? (useCachedDay ? cache?.dayPoints : undefined),
-    source: livePnl.source ?? cache?.source,
+    lastUpdated: livePnl.lastUpdated ?? cache?.lastUpdated,
+    source: livePnl.source ?? (cache ? "Cached APEX Analytics" : undefined),
     weekDollars: livePnl.weekDollars ?? cache?.weekDollars,
     weekPoints: livePnl.weekPoints ?? cache?.weekPoints
   };
@@ -1416,6 +1421,7 @@ function buildTradingViewPnlCache(
     dateKey,
     dayDollars: livePnl.dayDollars ?? (useCachedDay ? cache?.dayDollars : undefined),
     dayPoints: livePnl.dayPoints ?? (useCachedDay ? cache?.dayPoints : undefined),
+    lastUpdated: livePnl.lastUpdated ?? cache?.lastUpdated,
     source: livePnl.source ?? cache?.source ?? "TradingView",
     weekDollars: livePnl.weekDollars ?? cache?.weekDollars,
     weekPoints: livePnl.weekPoints ?? cache?.weekPoints
@@ -1436,6 +1442,7 @@ function isSameTradingViewPnlCache(left: TradingViewPnlCache | null, right: Trad
     left?.dateKey === right.dateKey &&
     left.dayDollars === right.dayDollars &&
     left.dayPoints === right.dayPoints &&
+    left.lastUpdated === right.lastUpdated &&
     left.source === right.source &&
     left.weekDollars === right.weekDollars &&
     left.weekPoints === right.weekPoints
@@ -1474,6 +1481,7 @@ function getSavedTradingViewPnl(state: TradingViewPnlState | null) {
   return {
     dayDollars,
     dayPoints,
+    lastUpdated: state.updatedAt,
     source: "APEX Analytics",
     weekDollars,
     weekPoints
@@ -1692,6 +1700,17 @@ function readPayloadString(payload: Record<string, unknown>, keys: string[]) {
 
 function formatPoints(points: number) {
   return Number.isInteger(points) ? String(points) : points.toFixed(1);
+}
+
+function formatPnlSyncTime(value: string) {
+  const parsed = new Date(`${value.replace(" ", "T")}Z`);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+    timeZoneName: "short"
+  }).format(parsed);
 }
 
 function SessionCore(props: {

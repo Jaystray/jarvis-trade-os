@@ -60,10 +60,22 @@ export function mapTradingViewPnlState(row: TradingViewPnlStateRow): TradingView
 
 function readPayloadValue(payload: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
-    const value = payload[key];
+    const value = readNestedPayloadValue(payload, key);
     if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
   }
   return "";
+}
+
+function readNestedPayloadValue(payload: Record<string, unknown>, key: string): unknown {
+  if (payload[key] !== undefined) return payload[key];
+
+  for (const value of Object.values(payload)) {
+    if (!value || Array.isArray(value) || typeof value !== "object") continue;
+    const nested = readNestedPayloadValue(value as Record<string, unknown>, key);
+    if (nested !== undefined) return nested;
+  }
+
+  return undefined;
 }
 
 export function normalizeTradingViewPayload(payload: Record<string, unknown>) {
@@ -86,19 +98,23 @@ export function extractTradingViewPnlState(
   normalized: ReturnType<typeof normalizeTradingViewPayload>,
   sourceAlertId: string
 ) {
-  const sourceText = `${normalized.message}\n${readPayloadValue(payload, ["analytics", "dashboard", "summary"])}`;
-  const todayPoints = readMetric(payload, dayPointKeys(), sourceText, "day", "points");
+  const metricPayload = expandMetricPayload(payload, normalized.message);
+  const sourceText = [
+    normalized.message,
+    readPayloadValue(metricPayload, ["analytics", "dashboard", "summary"])
+  ].join("\n");
+  const todayPoints = readMetric(metricPayload, dayPointKeys(), sourceText, "day", "points");
   const todayPnl =
-    readMetric(payload, dayDollarKeys(), sourceText, "day", "dollars") ||
+    readMetric(metricPayload, dayDollarKeys(), sourceText, "day", "dollars") ||
     dollarsFromPoints(todayPoints);
-  const weekPoints = readMetric(payload, weekPointKeys(), sourceText, "week", "points");
+  const weekPoints = readMetric(metricPayload, weekPointKeys(), sourceText, "week", "points");
   const weekPnl =
-    readMetric(payload, weekDollarKeys(), sourceText, "week", "dollars") ||
+    readMetric(metricPayload, weekDollarKeys(), sourceText, "week", "dollars") ||
     dollarsFromPoints(weekPoints);
-  const trades = readPayloadValue(payload, ["trades", "totalTrades", "total_trades"]) || parseSimpleMetric(sourceText, "trades");
-  const winRate = readPayloadValue(payload, ["winRate", "win_rate", "win"]) || parseSimpleMetric(sourceText, "win rate");
-  const mfe = readPayloadValue(payload, ["mfe"]) || parseMfeMae(sourceText, "mfe");
-  const mae = readPayloadValue(payload, ["mae"]) || parseMfeMae(sourceText, "mae");
+  const trades = readPayloadValue(metricPayload, ["trades", "totalTrades", "total_trades"]) || parseSimpleMetric(sourceText, "trades");
+  const winRate = readPayloadValue(metricPayload, ["winRate", "win_rate", "win"]) || parseSimpleMetric(sourceText, "win rate");
+  const mfe = readPayloadValue(metricPayload, ["mfe"]) || parseMfeMae(sourceText, "mfe");
+  const mae = readPayloadValue(metricPayload, ["mae"]) || parseMfeMae(sourceText, "mae");
 
   if (!todayPoints && !todayPnl && !weekPoints && !weekPnl && !trades && !winRate && !mfe && !mae) {
     return null;
@@ -117,6 +133,36 @@ export function extractTradingViewPnlState(
     mae,
     sourceAlertId
   };
+}
+
+function expandMetricPayload(payload: Record<string, unknown>, normalizedMessage: string) {
+  const expanded: Record<string, unknown> = { ...payload };
+  const possibleJsonSources = [
+    normalizedMessage,
+    readPayloadValue(payload, ["message", "alert_message", "text", "comment", "analytics", "dashboard", "summary"])
+  ];
+
+  for (const source of possibleJsonSources) {
+    const parsed = parseJsonObject(source);
+    if (parsed) Object.assign(expanded, parsed);
+  }
+
+  return expanded;
+}
+
+function parseJsonObject(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return parsed && !Array.isArray(parsed) && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildPayloadSummary(payload: Record<string, unknown>) {
@@ -174,12 +220,27 @@ function dayDollarKeys() {
   return [
     "todayPnl",
     "today_pnl",
+    "todayPnL",
+    "todayPL",
+    "today_pl",
+    "todaysPnl",
+    "todays_pnl",
     "todayDollars",
     "today_dollars",
+    "todaysDollars",
+    "todays_dollars",
     "dayPnl",
     "day_pnl",
+    "dayPnL",
+    "dayPL",
+    "day_pl",
     "dailyPnl",
     "daily_pnl",
+    "dailyPnL",
+    "dailyPL",
+    "daily_pl",
+    "dailyDollars",
+    "daily_dollars",
     "dashboardPnl",
     "dashboard_pnl"
   ];
@@ -189,8 +250,14 @@ function weekDollarKeys() {
   return [
     "weekPnl",
     "week_pnl",
+    "weekPnL",
+    "weekPL",
+    "week_pl",
     "weeklyPnl",
     "weekly_pnl",
+    "weeklyPnL",
+    "weeklyPL",
+    "weekly_pl",
     "weekDollars",
     "week_dollars",
     "weeklyDollars",
@@ -204,10 +271,18 @@ function dayPointKeys() {
     "today_points",
     "todayPts",
     "today_pts",
+    "todaysPoints",
+    "todays_points",
+    "todaysPts",
+    "todays_pts",
     "dayPoints",
     "day_points",
+    "dayPts",
+    "day_pts",
     "dailyPoints",
     "daily_points",
+    "dailyPts",
+    "daily_pts",
     "dashboardPoints",
     "dashboard_points"
   ];

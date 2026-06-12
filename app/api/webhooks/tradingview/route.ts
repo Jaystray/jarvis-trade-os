@@ -10,10 +10,37 @@ import {
 
 export const runtime = "nodejs";
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    endpoint: "/api/webhooks/tradingview",
+    secretConfigured: Boolean(process.env.TRADINGVIEW_WEBHOOK_SECRET?.trim()),
+    expectedPnlFields: [
+      "todayPoints",
+      "todayPnl",
+      "weekPoints",
+      "weekPnl"
+    ]
+  });
+}
+
 export async function POST(request: Request) {
-  const payload = (await request.json()) as Record<string, unknown>;
+  let payload: Record<string, unknown>;
+
+  try {
+    payload = (await request.json()) as Record<string, unknown>;
+  } catch (error) {
+    console.error("[TradingView webhook] invalid JSON payload", error);
+    return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 });
+  }
 
   if (!validateTradingViewSecret(request, payload)) {
+    console.error("[TradingView webhook] unauthorized request", {
+      hasAuthorizationHeader: Boolean(request.headers.get("authorization")),
+      hasHeaderSecret: Boolean(request.headers.get("x-jarvis-secret")),
+      hasPayloadSecret: Boolean(payload.secret),
+      secretConfigured: Boolean(process.env.TRADINGVIEW_WEBHOOK_SECRET?.trim())
+    });
     return NextResponse.json({ error: "Unauthorized webhook." }, { status: 401 });
   }
 
@@ -37,6 +64,18 @@ export async function POST(request: Request) {
   );
 
   const pnlState = extractTradingViewPnlState(payload, normalized, alertId);
+  console.log("[TradingView webhook] alert received", {
+    alertId,
+    event: payload.event,
+    symbol: normalized.symbol,
+    timeframe: normalized.timeframe,
+    pnlStateExtracted: Boolean(pnlState),
+    todayPoints: pnlState?.todayPoints || "",
+    todayPnl: pnlState?.todayPnl || "",
+    weekPoints: pnlState?.weekPoints || "",
+    weekPnl: pnlState?.weekPnl || ""
+  });
+
   if (pnlState) {
     db.prepare(
       `INSERT INTO tradingview_pnl_state
