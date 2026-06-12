@@ -180,6 +180,20 @@ export function AssistantDashboard() {
   const listeningHoldUntilRef = useRef(0);
   const listeningRestartTimerRef = useRef<number | null>(null);
 
+  const stopVoiceListening = useCallback((status = "Voice mode stopped.") => {
+    setVoiceMode(false);
+    listeningHoldUntilRef.current = 0;
+    if (listeningRestartTimerRef.current !== null) {
+      window.clearTimeout(listeningRestartTimerRef.current);
+      listeningRestartTimerRef.current = null;
+    }
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setLiveTranscript("");
+    setVoiceStatus(status);
+    console.log("[Jarvis voice] stopped:", status);
+  }, []);
+
   useEffect(() => {
     voiceModeRef.current = voiceMode;
   }, [voiceMode]);
@@ -221,6 +235,7 @@ export function AssistantDashboard() {
     const recognition = recognitionRef.current;
     if (!recognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
+      console.log("[Jarvis voice] SpeechRecognition is not available.");
       return;
     }
     if (listeningRestartTimerRef.current !== null) {
@@ -231,6 +246,9 @@ export function AssistantDashboard() {
       listeningHoldUntilRef.current,
       Date.now() + minimumVoiceListenMs
     );
+    console.log("[Jarvis voice] recognition.start() requested", {
+      holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
+    });
     try {
       recognition.start();
       setIsListening(true);
@@ -238,9 +256,11 @@ export function AssistantDashboard() {
       setVoiceStatus(
         interruptOnly ? "Listening for stop command." : "Listening. Speak your command."
       );
+      console.log("[Jarvis voice] listening started.");
     } catch {
       setVoiceStatus("Listening is already active.");
       setIsListening(true);
+      console.log("[Jarvis voice] recognition.start() was ignored because it is already active.");
     }
   }, []);
 
@@ -402,6 +422,7 @@ export function AssistantDashboard() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
+      console.log("[Jarvis voice] SpeechRecognition constructor missing.");
       return;
     }
     const recognition = new SpeechRecognition();
@@ -422,23 +443,16 @@ export function AssistantDashboard() {
         .trim();
 
       setLiveTranscript(final || interim);
+      if (interim) console.log("[Jarvis voice] interim transcript:", interim);
       if (final) {
+        console.log("[Jarvis voice] final transcript:", final);
         if (isStopVoiceCommand(final)) {
           if (isSpeakingRef.current) {
             stopSpeaking();
             setLiveTranscript("Stopped.");
             return;
           }
-          setVoiceMode(false);
-          listeningHoldUntilRef.current = 0;
-          if (listeningRestartTimerRef.current !== null) {
-            window.clearTimeout(listeningRestartTimerRef.current);
-            listeningRestartTimerRef.current = null;
-          }
-          recognitionRef.current?.stop();
-          setIsListening(false);
-          setVoiceStatus("Voice mode stopped.");
-          setLiveTranscript("Voice mode stopped.");
+          stopVoiceListening("Voice mode stopped.");
           return;
         }
 
@@ -454,6 +468,7 @@ export function AssistantDashboard() {
     };
     recognition.onerror = (event) => {
       const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
+      console.log("[Jarvis voice] recognition error:", event.error, { shouldHoldListening });
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setIsListening(false);
         setVoiceStatus("Microphone access was blocked. Allow microphone access in the browser.");
@@ -485,6 +500,7 @@ export function AssistantDashboard() {
     };
     recognition.onend = () => {
       const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
+      console.log("[Jarvis voice] recognition ended.", { shouldHoldListening });
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current) {
         setIsListening(shouldHoldListening);
         setVoiceStatus(
@@ -496,7 +512,7 @@ export function AssistantDashboard() {
       }
     };
     recognitionRef.current = recognition;
-  }, [addTranscriptLine, sendMessage, startListening, stopSpeaking]);
+  }, [addTranscriptLine, sendMessage, startListening, stopSpeaking, stopVoiceListening]);
 
   async function saveMemory() {
     const content = memoryInput.trim();
@@ -545,23 +561,18 @@ export function AssistantDashboard() {
 
   function toggleMic() {
     if (voiceMode || isListening) {
-      setVoiceMode(false);
-      listeningHoldUntilRef.current = 0;
-      if (listeningRestartTimerRef.current !== null) {
-        window.clearTimeout(listeningRestartTimerRef.current);
-        listeningRestartTimerRef.current = null;
-      }
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      setLiveTranscript("");
-      setVoiceStatus("Voice mode stopped.");
+      stopVoiceListening("Voice mode stopped.");
       return;
     }
     setVoiceMode(true);
     const greeting = getJarvisGreeting();
     addTranscriptLine(greeting);
     setVoiceStatus(greeting);
-    speak(greeting, startListening);
+    console.log("[Jarvis voice] center core tapped. Greeting started:", greeting);
+    speak(greeting, () => {
+      console.log("[Jarvis voice] greeting finished. Starting 10 second listener.");
+      startListening();
+    });
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
@@ -622,6 +633,11 @@ export function AssistantDashboard() {
           />
         </button>
         <p className="core-hint">tap core or say &apos;Jarvis&apos;</p>
+        {(voiceMode || isListening) && (
+          <p className={`voice-listening-label ${isListening ? "is-active" : ""}`}>
+            {isListening ? "Listening..." : "Voice mode active"}
+          </p>
+        )}
         <SubtitleStack
           liveTranscript={liveTranscript}
           lines={transcriptLines}
