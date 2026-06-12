@@ -607,13 +607,19 @@ body {
 .subtitle-stack {
   position: absolute;
   top: calc(100% + 26px);
-  width: min(640px, 82vw);
+  display: grid;
+  width: min(560px, 78vw);
   pointer-events: none;
+  place-items: center;
 }
 
 .subtitle-line {
   margin: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
+  border-radius: 6px;
+  background: rgba(3, 8, 15, 0.72);
+  padding: 8px 12px;
   font-size: 16px;
   line-height: 1.45;
   text-wrap: pretty;

@@ -1067,17 +1067,10 @@ function SubtitleStack(props: {
   lines: string[];
   status: string;
 }) {
-  const visibleLines = props.liveTranscript
-    ? [props.liveTranscript, ...props.lines.filter((line) => line !== props.liveTranscript)]
-    : props.lines;
+  const activeLine = props.liveTranscript || props.lines[0] || props.status;
   return (
     <div className="subtitle-stack">
-      {visibleLines.length === 0 && <p className="subtitle-line line-0">{props.status}</p>}
-      {visibleLines.slice(0, 4).map((line, index) => (
-        <p className={`subtitle-line line-${index}`} key={`${line}-${index}`}>
-          {line}
-        </p>
-      ))}
+      <p className="subtitle-line line-0">{activeLine}</p>
     </div>
   );
 }
