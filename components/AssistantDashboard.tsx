@@ -163,6 +163,7 @@ export function AssistantDashboard() {
   const [memoryInput, setMemoryInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [listeningWindowActive, setListeningWindowActive] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Voice mode is ready.");
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -178,6 +179,7 @@ export function AssistantDashboard() {
   const isSpeakingRef = useRef(false);
   const isSendingRef = useRef(false);
   const listeningHoldUntilRef = useRef(0);
+  const listeningWindowActiveRef = useRef(false);
   const listeningRestartTimerRef = useRef<number | null>(null);
   const listeningWindowTimerRef = useRef<number | null>(null);
 
@@ -188,7 +190,9 @@ export function AssistantDashboard() {
 
   const stopVoiceListening = useCallback((status = "Voice mode stopped.") => {
     voiceModeRef.current = false;
+    listeningWindowActiveRef.current = false;
     setVoiceMode(false);
+    setListeningWindowActive(false);
     listeningHoldUntilRef.current = 0;
     if (listeningRestartTimerRef.current !== null) {
       window.clearTimeout(listeningRestartTimerRef.current);
@@ -248,6 +252,7 @@ export function AssistantDashboard() {
     if (!recognition) {
       setVoiceStatus("Voice recognition is not available in this browser.");
       setIsListening(true);
+      setListeningWindowActive(true);
       console.log("[Jarvis voice] SpeechRecognition is not available.");
       return;
     }
@@ -264,6 +269,7 @@ export function AssistantDashboard() {
     try {
       recognition.start();
       setIsListening(true);
+      setListeningWindowActive(true);
       setLiveTranscript("");
       setVoiceStatus(
         interruptOnly ? "Listening for stop command." : "Listening. Speak your command."
@@ -272,6 +278,7 @@ export function AssistantDashboard() {
     } catch {
       setVoiceStatus("Listening is already active.");
       setIsListening(true);
+      setListeningWindowActive(true);
       console.log("[Jarvis voice] recognition.start() was ignored because it is already active.");
     }
   }, [keepVoiceSessionActive]);
@@ -288,7 +295,9 @@ export function AssistantDashboard() {
     }
 
     listeningHoldUntilRef.current = Date.now() + minimumVoiceListenMs;
+    listeningWindowActiveRef.current = true;
     setIsListening(true);
+    setListeningWindowActive(true);
     setLiveTranscript("");
     setVoiceStatus("Listening. Speak your command.");
     console.log("[Jarvis voice] 10 second listening window opened", {
@@ -300,9 +309,11 @@ export function AssistantDashboard() {
       listeningWindowTimerRef.current = null;
       if (Date.now() < listeningHoldUntilRef.current) return;
       listeningHoldUntilRef.current = 0;
+      listeningWindowActiveRef.current = false;
       voiceModeRef.current = false;
       setVoiceMode(false);
       setIsListening(false);
+      setListeningWindowActive(false);
       setVoiceStatus("Voice mode is ready.");
       recognitionRef.current?.stop();
       console.log("[Jarvis voice] 10 second listening window closed.");
@@ -516,8 +527,10 @@ export function AssistantDashboard() {
       console.log("[Jarvis voice] recognition error:", event.error, { shouldHoldListening });
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setIsListening(false);
+        setListeningWindowActive(false);
         setVoiceStatus("Microphone access was blocked. Allow microphone access in the browser.");
         voiceModeRef.current = false;
+        listeningWindowActiveRef.current = false;
         setVoiceMode(false);
         setLiveTranscript("");
         return;
@@ -528,9 +541,10 @@ export function AssistantDashboard() {
         if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
           keepVoiceSessionActive();
           setIsListening(true);
+          setListeningWindowActive(true);
           listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 200 : 500);
         } else {
-          setIsListening(false);
+          setIsListening(listeningWindowActiveRef.current);
         }
         return;
       }
@@ -539,9 +553,10 @@ export function AssistantDashboard() {
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
         keepVoiceSessionActive();
         setIsListening(true);
+        setListeningWindowActive(true);
         listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 250 : 800);
       } else {
-        setIsListening(false);
+        setIsListening(listeningWindowActiveRef.current);
       }
       setLiveTranscript("");
     };
@@ -551,12 +566,13 @@ export function AssistantDashboard() {
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
         keepVoiceSessionActive();
         setIsListening(true);
+        setListeningWindowActive(true);
         setVoiceStatus(
           shouldHoldListening ? "Still listening. Ask your question when ready." : "Listening paused. Restarting."
         );
         listeningRestartTimerRef.current = window.setTimeout(startListening, shouldHoldListening ? 200 : 350);
       } else {
-        setIsListening(false);
+        setIsListening(listeningWindowActiveRef.current);
       }
     };
     recognitionRef.current = recognition;
@@ -634,7 +650,7 @@ export function AssistantDashboard() {
   const latestDirection = entries[0]?.direction;
   const bias =
     latestDirection === "Long" ? "long" : latestDirection === "Short" ? "short" : "neutral";
-  const coreState = isSpeaking ? "speaking" : voiceMode || isListening ? "listening" : "idle";
+  const coreState = isSpeaking ? "speaking" : listeningWindowActive || voiceMode || isListening ? "listening" : "idle";
   const cycle = now
     ? getAmdCycle(now)
     : { activeMark: null, angle: 0, countdown: "--:--", inPivotWindow: false };
@@ -681,9 +697,9 @@ export function AssistantDashboard() {
           />
         </button>
         <p className="core-hint">tap core or say &apos;Jarvis&apos;</p>
-        {(voiceMode || isListening) && (
-          <p className={`voice-listening-label ${isListening ? "is-active" : ""}`}>
-            {isListening ? "Listening..." : "Voice mode active"}
+        {(listeningWindowActive || voiceMode || isListening) && (
+          <p className={`voice-listening-label ${listeningWindowActive || isListening ? "is-active" : ""}`}>
+            {listeningWindowActive || isListening ? "Listening..." : "Voice mode active"}
           </p>
         )}
         <SubtitleStack
