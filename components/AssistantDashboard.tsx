@@ -61,9 +61,14 @@ type SpeechRecognitionLike = {
   lang: string;
   start: () => void;
   stop: () => void;
+  onaudioend: (() => void) | null;
+  onaudiostart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: { error?: string }) => void) | null;
   onend: (() => void) | null;
+  onspeechend: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onstart: (() => void) | null;
 };
 type AlertPnlValues = {
   dollars?: number;
@@ -178,6 +183,8 @@ export function AssistantDashboard() {
   const voiceModeRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isSendingRef = useRef(false);
+  const isRecognitionRunningRef = useRef(false);
+  const isGreetingActiveRef = useRef(false);
   const listeningHoldUntilRef = useRef(0);
   const listeningWindowActiveRef = useRef(false);
   const listeningRestartTimerRef = useRef<number | null>(null);
@@ -190,6 +197,8 @@ export function AssistantDashboard() {
 
   const stopVoiceListening = useCallback((status = "Voice mode stopped.") => {
     voiceModeRef.current = false;
+    isGreetingActiveRef.current = false;
+    isRecognitionRunningRef.current = false;
     listeningWindowActiveRef.current = false;
     setVoiceMode(false);
     setListeningWindowActive(false);
@@ -263,7 +272,17 @@ export function AssistantDashboard() {
     if (listeningHoldUntilRef.current <= Date.now()) {
       listeningHoldUntilRef.current = Date.now() + minimumVoiceListenMs;
     }
+    if (isRecognitionRunningRef.current) {
+      setIsListening(true);
+      setListeningWindowActive(true);
+      setVoiceStatus(interruptOnly ? "Listening for stop command." : "Listening. Speak your command.");
+      console.log("[Jarvis voice] recognition.start() skipped; already running", {
+        holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
+      });
+      return;
+    }
     console.log("[Jarvis voice] recognition.start() requested", {
+      greetingActive: isGreetingActiveRef.current,
       holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
     });
     try {
@@ -275,15 +294,15 @@ export function AssistantDashboard() {
         interruptOnly ? "Listening for stop command." : "Listening. Speak your command."
       );
       console.log("[Jarvis voice] listening started.");
-    } catch {
+    } catch (error) {
       setVoiceStatus("Listening is already active.");
       setIsListening(true);
       setListeningWindowActive(true);
-      console.log("[Jarvis voice] recognition.start() was ignored because it is already active.");
+      console.log("[Jarvis voice] recognition.start() threw", error);
     }
   }, [keepVoiceSessionActive]);
 
-  const beginListeningWindow = useCallback(() => {
+  const beginListeningWindow = useCallback((reason = "manual") => {
     keepVoiceSessionActive();
     if (listeningRestartTimerRef.current !== null) {
       window.clearTimeout(listeningRestartTimerRef.current);
@@ -301,6 +320,7 @@ export function AssistantDashboard() {
     setLiveTranscript("");
     setVoiceStatus("Listening. Speak your command.");
     console.log("[Jarvis voice] 10 second listening window opened", {
+      reason,
       holdUntil: new Date(listeningHoldUntilRef.current).toISOString()
     });
 
@@ -316,12 +336,13 @@ export function AssistantDashboard() {
       setListeningWindowActive(false);
       setVoiceStatus("Voice mode is ready.");
       recognitionRef.current?.stop();
-      console.log("[Jarvis voice] 10 second listening window closed.");
+      console.log("[Jarvis voice] 10 second listening window closed.", { reason });
     }, minimumVoiceListenMs);
   }, [keepVoiceSessionActive, startListening]);
 
   const speak = useCallback((text: string, afterSpeech?: () => void) => {
     if (!("speechSynthesis" in window)) {
+      console.log("[Jarvis voice] speechSynthesis unavailable; running afterSpeech immediately.");
       afterSpeech?.();
       return;
     }
@@ -332,16 +353,22 @@ export function AssistantDashboard() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.98;
     utterance.pitch = 0.86;
+    utterance.onstart = () => {
+      console.log("[Jarvis voice] greeting speech started:", text);
+    };
     utterance.onend = () => {
       isSpeakingRef.current = false;
       setIsSpeaking(false);
+      console.log("[Jarvis voice] greeting speech ended:", text);
       afterSpeech?.();
     };
-    utterance.onerror = () => {
+    utterance.onerror = (event) => {
       isSpeakingRef.current = false;
       setIsSpeaking(false);
+      console.log("[Jarvis voice] greeting speech error:", event.error);
       afterSpeech?.();
     };
+    console.log("[Jarvis voice] speechSynthesis.speak() requested:", text);
     window.speechSynthesis.speak(utterance);
   }, []);
 
@@ -485,6 +512,33 @@ export function AssistantDashboard() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
+    recognition.onstart = () => {
+      isRecognitionRunningRef.current = true;
+      setIsListening(true);
+      setListeningWindowActive(true);
+      console.log("[Jarvis voice] recognition onstart", {
+        greetingActive: isGreetingActiveRef.current,
+        holdUntil: new Date(listeningHoldUntilRef.current || Date.now()).toISOString()
+      });
+    };
+    recognition.onaudiostart = () => {
+      console.log("[Jarvis voice] recognition onaudiostart");
+    };
+    recognition.onspeechstart = () => {
+      console.log("[Jarvis voice] recognition onspeechstart", {
+        greetingActive: isGreetingActiveRef.current
+      });
+    };
+    recognition.onspeechend = () => {
+      console.log("[Jarvis voice] recognition onspeechend", {
+        shouldHoldListening: listeningHoldUntilRef.current > Date.now()
+      });
+    };
+    recognition.onaudioend = () => {
+      console.log("[Jarvis voice] recognition onaudioend", {
+        shouldHoldListening: listeningHoldUntilRef.current > Date.now()
+      });
+    };
     recognition.onresult = (event) => {
       const results = Array.from(event.results);
       const interim = results
@@ -502,6 +556,10 @@ export function AssistantDashboard() {
       if (interim) console.log("[Jarvis voice] interim transcript:", interim);
       if (final) {
         console.log("[Jarvis voice] final transcript:", final);
+        if (isGreetingActiveRef.current) {
+          console.log("[Jarvis voice] ignored transcript during greeting:", final);
+          return;
+        }
         if (isStopVoiceCommand(final)) {
           if (isSpeakingRef.current) {
             stopSpeaking();
@@ -524,6 +582,7 @@ export function AssistantDashboard() {
     };
     recognition.onerror = (event) => {
       const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
+      isRecognitionRunningRef.current = false;
       console.log("[Jarvis voice] recognition error:", event.error, { shouldHoldListening });
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setIsListening(false);
@@ -562,6 +621,7 @@ export function AssistantDashboard() {
     };
     recognition.onend = () => {
       const shouldHoldListening = listeningHoldUntilRef.current > Date.now();
+      isRecognitionRunningRef.current = false;
       console.log("[Jarvis voice] recognition ended.", { shouldHoldListening });
       if (voiceModeRef.current && !isSpeakingRef.current && !isSendingRef.current && shouldHoldListening) {
         keepVoiceSessionActive();
@@ -631,9 +691,14 @@ export function AssistantDashboard() {
     keepVoiceSessionActive();
     const greeting = getJarvisGreeting();
     addTranscriptLine(greeting);
-    beginListeningWindow();
-    console.log("[Jarvis voice] center core tapped. Starting 10 second listener with greeting:", greeting);
-    speak(greeting);
+    isGreetingActiveRef.current = true;
+    beginListeningWindow("core tap user gesture");
+    console.log("[Jarvis voice] center core tapped. Recognition starts before greeting:", greeting);
+    speak(greeting, () => {
+      isGreetingActiveRef.current = false;
+      console.log("[Jarvis voice] greeting complete. Resetting post-greeting 10 second listener.");
+      beginListeningWindow("post greeting");
+    });
   }
 
   const activeLabel = modules.find((item) => item.id === active)?.label || "Command Chat";
