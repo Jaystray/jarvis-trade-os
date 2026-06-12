@@ -52,86 +52,106 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
-    sessionId?: string;
-    message?: string;
-    persist?: boolean;
-  };
-  const sessionId = body.sessionId || "default";
-  const message = body.message?.trim();
-  const persist = body.persist !== false;
+  try {
+    const body = (await request.json()) as {
+      sessionId?: string;
+      message?: string;
+      persist?: boolean;
+    };
+    const sessionId = body.sessionId || "default";
+    const message = body.message?.trim();
+    const persist = body.persist !== false;
 
-  if (!message) {
-    return NextResponse.json({ error: "Message is required." }, { status: 400 });
-  }
+    if (!message) {
+      return NextResponse.json({ error: "Message is required." }, { status: 400 });
+    }
 
-  const db = getDb();
-  db.prepare("INSERT OR IGNORE INTO sessions (id, title) VALUES (?, ?)").run(
-    sessionId,
-    "Primary Session"
-  );
-
-  const memory = autoMemory(message);
-  if (memory) {
-    db.prepare("INSERT INTO memories (id, title, content, tags) VALUES (?, ?, ?, ?)").run(
-      id("mem"),
-      memory.title,
-      memory.content,
-      JSON.stringify(["manual", "chat"])
+    const db = getDb();
+    db.prepare("INSERT OR IGNORE INTO sessions (id, title) VALUES (?, ?)").run(
+      sessionId,
+      "Primary Session"
     );
-  }
 
-  const launchTargetId = detectLaunchIntent(message);
-  const localLaunch = launchTargetId ? await launchLocalTarget(launchTargetId) : null;
-  const relevantMemories = getRelevantMemories(message);
-  const onlineIntel = await getOnlineIntel(message);
-  const reply = localLaunch
-    ? localLaunch.message
-    : await generateAssistantReply(message, relevantMemories, onlineIntel);
+    const memory = autoMemory(message);
+    if (memory) {
+      db.prepare("INSERT INTO memories (id, title, content, tags) VALUES (?, ?, ?, ?)").run(
+        id("mem"),
+        memory.title,
+        memory.content,
+        JSON.stringify(["manual", "chat"])
+      );
+    }
 
-  if (!persist) {
+    const launchTargetId = detectLaunchIntent(message);
+    const localLaunch = launchTargetId ? await launchLocalTarget(launchTargetId) : null;
+    const relevantMemories = getRelevantMemories(message);
+    const onlineIntel = await getOnlineIntel(message);
+    const reply = localLaunch
+      ? localLaunch.message
+      : await generateAssistantReply(message, relevantMemories, onlineIntel);
+
+    if (!persist) {
+      return NextResponse.json({
+        messages: [
+          {
+            id: id("voice"),
+            sessionId,
+            role: "assistant",
+            content: reply,
+            createdAt: new Date().toISOString()
+          }
+        ],
+        localLaunch,
+        memories: relevantMemories,
+        onlineIntel,
+        savedMemory: Boolean(memory)
+      });
+    }
+
+    const userMessageId = id("msg");
+    db.prepare("INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)").run(
+      userMessageId,
+      sessionId,
+      "user",
+      message
+    );
+
+    const assistantMessageId = id("msg");
+    db.prepare("INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)").run(
+      assistantMessageId,
+      sessionId,
+      "assistant",
+      reply
+    );
+
+    const rows = db
+      .prepare("SELECT * FROM messages WHERE id IN (?, ?) ORDER BY created_at ASC")
+      .all(userMessageId, assistantMessageId) as MessageRow[];
+
     return NextResponse.json({
-      messages: [
-        {
-          id: id("voice"),
-          sessionId,
-          role: "assistant",
-          content: reply,
-          createdAt: new Date().toISOString()
-        }
-      ],
       localLaunch,
+      messages: rows.map(mapMessage),
       memories: relevantMemories,
       onlineIntel,
       savedMemory: Boolean(memory)
     });
+  } catch (error) {
+    console.error("[Jarvis chat] request failed", error);
+    const message = error instanceof Error ? error.message : "Unknown server error.";
+    return NextResponse.json({
+      messages: [
+        {
+          id: id("error"),
+          sessionId: "error",
+          role: "assistant",
+          content: `Jarvis chat failed on the server: ${message}`,
+          createdAt: new Date().toISOString()
+        }
+      ],
+      localLaunch: null,
+      memories: [],
+      onlineIntel: null,
+      savedMemory: false
+    });
   }
-
-  const userMessageId = id("msg");
-  db.prepare("INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)").run(
-    userMessageId,
-    sessionId,
-    "user",
-    message
-  );
-
-  const assistantMessageId = id("msg");
-  db.prepare("INSERT INTO messages (id, session_id, role, content) VALUES (?, ?, ?, ?)").run(
-    assistantMessageId,
-    sessionId,
-    "assistant",
-    reply
-  );
-
-  const rows = db
-    .prepare("SELECT * FROM messages WHERE id IN (?, ?) ORDER BY created_at ASC")
-    .all(userMessageId, assistantMessageId) as MessageRow[];
-
-  return NextResponse.json({
-    localLaunch,
-    messages: rows.map(mapMessage),
-    memories: relevantMemories,
-    onlineIntel,
-    savedMemory: Boolean(memory)
-  });
 }

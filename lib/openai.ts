@@ -47,34 +47,49 @@ export async function generateAssistantReply(
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-  const completion = await client.chat.completions.create({
-    model,
-    temperature: 0.4,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are JARVIS, a concise personal AI assistant for a trader. Be direct, practical, and context-aware. Use saved memories when relevant, but do not mention memory retrieval mechanics unless helpful."
-      },
-      {
-        role: "system",
-        content: `Relevant saved memories:\n${memoryContext(memories)}`
-      },
-      {
-        role: "system",
-        content: [
-          "Live online intel, if requested:",
-          formatOnlineIntelForPrompt(onlineIntel || null),
-          "",
-          "If live intel is present, answer from it clearly and mention missing provider setup if needed.",
-          "Do not pretend to have checked live data when no live intel was provided."
-        ].join("\n")
-      },
-      { role: "user", content: input }
-    ]
-  });
+  try {
+    const completion = await client.chat.completions.create({
+      model,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are JARVIS, a concise personal AI assistant for a trader. Be direct, practical, and context-aware. Use saved memories when relevant, but do not mention memory retrieval mechanics unless helpful."
+        },
+        {
+          role: "system",
+          content: `Relevant saved memories:\n${memoryContext(memories)}`
+        },
+        {
+          role: "system",
+          content: [
+            "Live online intel, if requested:",
+            formatOnlineIntelForPrompt(onlineIntel || null),
+            "",
+            "If live intel is present, answer from it clearly and mention missing provider setup if needed.",
+            "Do not pretend to have checked live data when no live intel was provided."
+          ].join("\n")
+        },
+        { role: "user", content: input }
+      ]
+    });
 
-  return completion.choices[0]?.message.content?.trim() || "I could not generate a response.";
+    return completion.choices[0]?.message.content?.trim() || "I could not generate a response.";
+  } catch (error) {
+    console.error("[Jarvis OpenAI] assistant reply failed", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown OpenAI error.";
+    if (onlineIntel) {
+      return [
+        onlineIntel.summary,
+        onlineIntel.details?.length ? onlineIntel.details.join("\n") : "",
+        `OpenAI request failed: ${errorMessage}`
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    }
+    return `OpenAI request failed: ${errorMessage}`;
+  }
 }
 
 export async function generateCodexPrompt(changeRequest: string, memories: Memory[]) {
